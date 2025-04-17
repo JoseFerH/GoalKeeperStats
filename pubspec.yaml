@@ -1,0 +1,87 @@
+name: goalkeeper_stats
+description: Aplicación para porteros de fútbol para registrar y analizar estadísticas.
+
+# La versión sigue la convención de versionado semántico (major.minor.patch+build)
+version: 1.0.0+2
+
+# Evita que el paquete sea publicado en pub.dev
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+    
+  image_picker: ^1.0.7 # Para seleccionar imágenes de la galería o cámara
+  # shared_preferences: ^2.2.0
+  in_app_purchase: ^3.1.7  # Última versión estable al momento de escribir esto
+  connectivity_plus: ^4.0.2
+  firebase_crashlytics: ^3.3.5
+  google_sign_in: ^6.1.5  # Última versión estable al momento de escribir esto
+  
+  # in_app_purchase: ^3.1.7
+  in_app_purchase_android: ^3.0.6
+  in_app_purchase_storekit: ^3.0.1
+  # firebase_core: ^2.15.1
+  firebase_core: ^2.18.0     # Dependencia base de Firebase
+  firebase_analytics: ^10.6.0  # Última versión estable al momento de escribir esto
+  firebase_auth: ^4.9.0
+  cloud_firestore: ^4.9.1
+
+  # Iconos y elementos básicos de UI
+  cupertino_icons: ^1.0.5
+  
+  # Gestión de estado
+  flutter_bloc: ^8.1.3
+  provider: ^6.0.5
+  equatable: ^2.0.5
+  
+  # Herramientas de formato y localización
+  intl: ^0.19.0
+  url_launcher: ^6.1.14
+  
+  # Almacenamiento y persistencia local
+  shared_preferences: ^2.2.0
+  path_provider: ^2.1.1
+  
+  # Información de la aplicación
+  package_info_plus: ^4.1.0
+  
+  # UI y Gráficos
+  fl_chart: ^0.63.0
+  
+  # Diseño y animaciones
+  google_fonts: ^5.1.0
+  animations: ^2.0.8
+  
+  # Formularios y validación
+  form_field_validator: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Herramientas de análisis y formateo
+  flutter_lints: ^2.0.2
+
+# Configuración de Flutter
+flutter:
+  # Usa Material Design
+  uses-material-design: true
+  
+  # Activos de la aplicación
+  assets:
+    - assets/images/
+    - assets/icons/
+  
+  # Fuentes personalizadas
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
