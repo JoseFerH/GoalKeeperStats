@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/data/repositories/firebase_auth_repository.dart';
-import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_repository.dart';
-import 'package:goalkeeper_stats/data/repositories/firebase_matches_repository.dart';
-import 'package:goalkeeper_stats/data/repositories/firebase_shots_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/matches_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/shots_repository.dart';
@@ -15,8 +12,11 @@ import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/auth/login_page.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
+import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_repository.dart';
+import 'package:goalkeeper_stats/data/repositories/firebase_matches_repository.dart';
+import 'package:goalkeeper_stats/data/repositories/firebase_shots_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-// Importar las pestañas aquí - asegúrate de que las rutas sean correctas
+// Importar las pestañas
 import 'package:goalkeeper_stats/presentation/pages/dashboard/home_tab.dart';
 import 'package:goalkeeper_stats/presentation/pages/match_records/matches_tab.dart';
 import 'package:goalkeeper_stats/presentation/pages/shot_records/shot_entry_tab.dart';
@@ -44,10 +44,11 @@ class _DashboardPageState extends State<DashboardPage>
   late UserModel _currentUser;
   late AuthBloc _authBloc;
 
-  // Repositorios Firebase
+  // Repositorios
   late MatchesRepository _matchesRepository;
   late ShotsRepository _shotsRepository;
   late GoalkeeperPassesRepository _passesRepository;
+  late AuthRepository _authRepository;
 
   // Servicios
   late ConnectivityService _connectivityService;
@@ -71,7 +72,7 @@ class _DashboardPageState extends State<DashboardPage>
     // Configurar Crashlytics con datos de usuario
     _setupCrashlytics();
 
-    // Inicializar repositorios Firebase
+    // Inicializar repositorios
     _initRepositories();
 
     // Monitorear conectividad
@@ -92,11 +93,31 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _initRepositories() {
-    // Inicializar repositorios Firebase con el id del usuario
-    _matchesRepository = FirebaseMatchesRepository(userId: _currentUser.id);
-    _shotsRepository = FirebaseShotsRepository(userId: _currentUser.id);
-    _passesRepository =
-        FirebaseGoalkeeperPassesRepository(userId: _currentUser.id);
+    // Crear repositorio de autenticación compartido
+    _authRepository = FirebaseAuthRepository();
+    
+    // Inicializar los repositorios
+    _shotsRepository = FirebaseShotsRepository(
+      authRepository: _authRepository,
+    );
+    
+    _passesRepository = FirebaseGoalkeeperPassesRepository(
+      authRepository: _authRepository,
+    );
+    
+    _matchesRepository = FirebaseMatchesRepository(
+      authRepository: _authRepository,
+      shotsRepository: _shotsRepository,
+      passesRepository: _passesRepository,
+    );
+    
+    // Inicializar el BLoC de autenticación
+    _authBloc = AuthBloc(
+      authRepository: _authRepository,
+      analyticsService: AnalyticsService(), // Añadir servicio de analytics
+      crashlytics: _crashlyticsService.crashlytics, // Añadir crashlytics
+      connectivityService: _connectivityService, // Añadir servicio de conectividad
+    );
   }
 
   void _monitorConnectivity() {
@@ -154,10 +175,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   Widget build(BuildContext context) {
-    // Crear authBloc con repository Firebase
-    final authRepository = FirebaseAuthRepository();
-    _authBloc = AuthBloc(authRepository: authRepository);
-
     return BlocProvider.value(
       value: _authBloc,
       child: BlocListener<AuthBloc, AuthState>(

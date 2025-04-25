@@ -7,23 +7,20 @@ import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// BLoC que maneja la lógica de autenticación con Firebase
-///
-/// Gestiona el flujo de autenticación y mantiene el estado actual
-/// del usuario en la aplicación, con integración completa de Firebase.
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthRepository _authRepository;
-  final AnalyticsService _analyticsService;
-  final FirebaseCrashlytics _crashlytics;
-  final ConnectivityService _connectivityService;
+  final AnalyticsService? _analyticsService;
+  final FirebaseCrashlytics? _crashlytics;
+  final ConnectivityService? _connectivityService;
 
-  // Constructor con dependencias inyectadas
   AuthBloc({
     required AuthRepository authRepository,
-    required AnalyticsService analyticsService,
-    required FirebaseCrashlytics crashlytics,
-    required ConnectivityService connectivityService,
+    AnalyticsService? analyticsService,
+    FirebaseCrashlytics? crashlytics,
+    ConnectivityService? connectivityService,
   })  : _authRepository = authRepository,
         _analyticsService = analyticsService,
         _crashlytics = crashlytics,
@@ -38,6 +35,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<VerifySubscriptionEvent>(_onVerifySubscription);
   }
 
+  /// Método auxiliar para verificar la conectividad
+  Future<bool> _checkIsOnline() async {
+    if (_connectivityService == null) {
+      return true; // Si no hay servicio de conectividad, asumir conectado
+    }
+    return await _connectivityService.checkConnectivity();
+  }
+
   /// Verifica si hay un usuario autenticado al iniciar la app
   Future<void> _onCheckAuthStatus(
     CheckAuthStatusEvent event,
@@ -45,10 +50,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(AuthLoadingState());
     try {
-      final isOnline = await _connectivityService.checkConnectivity();
+      final isOnline = await _checkIsOnline();
       if (!isOnline) {
-        _crashlytics.log('Verificando autenticación sin conexión');
-        // Intentar obtener datos de caché o informar al usuario
+        _crashlytics?.log('Verificando autenticación sin conexión');
       }
 
       final isSignedIn = await _authRepository.isSignedIn();
@@ -57,9 +61,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final user = await _authRepository.getCurrentUser();
         if (user != null) {
           // Configurar identificadores para análisis y crashlytics
-          await _crashlytics.setUserIdentifier(user.id);
-          await _analyticsService.setUserId(user.id);
-          await _analyticsService.updateUserFromModel(user);
+          await _crashlytics?.setUserIdentifier(user.id);
+          await _analyticsService?.setUserId(user.id);
+          await _analyticsService?.updateUserFromModel(user);
 
           emit(AuthenticatedState(user));
         } else {
@@ -70,7 +74,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }
     } catch (e, stack) {
       // Registrar error en Crashlytics
-      _crashlytics.recordError(e, stack,
+      await _crashlytics?.recordError(e, stack,
           reason: 'Error al verificar estado de autenticación');
 
       debugPrint('Error al verificar autenticación: $e');
@@ -87,7 +91,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoadingState());
     try {
       // Verificar conectividad
-      final isOnline = await _connectivityService.checkConnectivity();
+      final isOnline = await _checkIsOnline();
       if (!isOnline) {
         emit(AuthErrorState(
             'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'));
@@ -97,21 +101,21 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await _authRepository.signInWithGoogle();
 
       // Registrar evento de inicio de sesión
-      await _analyticsService.logLogin('google');
+      await _analyticsService?.logLogin('google');
 
       // Configurar identificadores para servicios
-      await _crashlytics.setUserIdentifier(user.id);
-      await _analyticsService.setUserId(user.id);
-      await _analyticsService.updateUserFromModel(user);
+      await _crashlytics?.setUserIdentifier(user.id);
+      await _analyticsService?.setUserId(user.id);
+      await _analyticsService?.updateUserFromModel(user);
 
       emit(AuthenticatedState(user));
     } catch (e, stack) {
       // Registrar error en Crashlytics
-      _crashlytics.recordError(e, stack,
+      await _crashlytics?.recordError(e, stack,
           reason: 'Error en inicio de sesión con Google');
 
       // Registrar evento de error
-      _analyticsService.logError('auth', 'Error en inicio de sesión: $e');
+      await _analyticsService?.logError('auth', 'Error en inicio de sesión: $e');
 
       debugPrint('Error en inicio de sesión: $e');
       emit(AuthErrorState(
@@ -127,17 +131,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(AuthLoadingState());
     try {
       // Registrar evento de cierre de sesión
-      await _analyticsService.logLogout();
+      await _analyticsService?.logLogout();
 
       // Limpiar datos de usuario en servicios
-      await _crashlytics.setUserIdentifier('');
-      await _analyticsService.clearUserData();
+      await _crashlytics?.setUserIdentifier('');
+      await _analyticsService?.clearUserData();
 
       await _authRepository.signOut();
       emit(UnauthenticatedState());
     } catch (e, stack) {
       // Registrar error en Crashlytics
-      _crashlytics.recordError(e, stack, reason: 'Error al cerrar sesión');
+      await _crashlytics?.recordError(e, stack, reason: 'Error al cerrar sesión');
 
       debugPrint('Error al cerrar sesión: $e');
       emit(AuthErrorState(
@@ -155,7 +159,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthLoadingState());
       try {
         // Verificar conectividad
-        final isOnline = await _connectivityService.checkConnectivity();
+        final isOnline = await _checkIsOnline();
         if (!isOnline) {
           emit(AuthErrorState(
               'No hay conexión a internet. Los cambios se aplicarán cuando te conectes.'));
@@ -166,12 +170,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         final updatedUser = await _authRepository.updateUserProfile(event.user);
 
         // Actualizar datos de usuario en servicios
-        await _analyticsService.updateUserFromModel(updatedUser);
+        await _analyticsService?.updateUserFromModel(updatedUser);
 
         emit(AuthenticatedState(updatedUser));
       } catch (e, stack) {
         // Registrar error en Crashlytics
-        _crashlytics.recordError(e, stack,
+        await _crashlytics?.recordError(e, stack,
             reason: 'Error al actualizar perfil de usuario');
 
         debugPrint('Error al actualizar perfil: $e');
@@ -194,7 +198,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthLoadingState());
       try {
         // Verificar conectividad
-        final isOnline = await _connectivityService.checkConnectivity();
+        final isOnline = await _checkIsOnline();
         if (!isOnline && !event.allowOffline) {
           emit(AuthErrorState(
               'No hay conexión a internet. Los cambios se aplicarán cuando te conectes.'));
@@ -204,11 +208,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
         // Registrar cambios de configuración
         if (event.settings.language != currentState.user.settings.language) {
-          await _analyticsService.logLanguageChanged(event.settings.language);
+          await _analyticsService?.logLanguageChanged(event.settings.language);
         }
 
         if (event.settings.darkMode != currentState.user.settings.darkMode) {
-          await _analyticsService.logThemeChanged(event.settings.darkMode);
+          await _analyticsService?.logThemeChanged(event.settings.darkMode);
         }
 
         final updatedUser = await _authRepository.updateUserSettings(
@@ -219,7 +223,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthenticatedState(updatedUser));
       } catch (e, stack) {
         // Registrar error en Crashlytics
-        _crashlytics.recordError(e, stack,
+        await _crashlytics?.recordError(e, stack,
             reason: 'Error al actualizar configuraciones de usuario');
 
         debugPrint('Error al actualizar configuraciones: $e');
@@ -242,7 +246,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthLoadingState());
       try {
         // Verificar conectividad (crítico para suscripciones)
-        final isOnline = await _connectivityService.checkConnectivity();
+        final isOnline = await _checkIsOnline();
         if (!isOnline) {
           emit(AuthErrorState(
               'Se requiere conexión a internet para actualizar la suscripción.'));
@@ -256,23 +260,23 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         );
 
         // Actualizar estado premium en servicios
-        await _analyticsService.setUserProperties(
+        await _analyticsService?.setUserProperties(
           userId: updatedUser.id,
           isPremium: updatedUser.subscription.isPremium,
           subscriptionPlan: updatedUser.subscription.plan,
         );
 
-        await _crashlytics.setCustomKey(
+        await _crashlytics?.setCustomKey(
             'isPremium', updatedUser.subscription.isPremium);
         if (updatedUser.subscription.plan != null) {
-          await _crashlytics.setCustomKey(
+          await _crashlytics?.setCustomKey(
               'subscriptionPlan', updatedUser.subscription.plan!);
         }
 
         emit(AuthenticatedState(updatedUser));
       } catch (e, stack) {
         // Registrar error en Crashlytics
-        _crashlytics.recordError(e, stack,
+        await _crashlytics?.recordError(e, stack,
             reason: 'Error al actualizar suscripción');
 
         debugPrint('Error al actualizar suscripción: $e');
@@ -296,10 +300,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         // No emitimos estado de carga para no interrumpir la experiencia
 
         // Verificar conectividad
-        final isOnline = await _connectivityService.checkConnectivity();
+        final isOnline = await _checkIsOnline();
         if (!isOnline) {
           // Si no hay conexión, continuamos con el estado actual
-          _crashlytics.log(
+          _crashlytics?.log(
               'Verificación de suscripción diferida por falta de conexión');
           return;
         }
@@ -321,11 +325,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             emit(AuthenticatedState(latestUser));
 
             // Actualizar servicios
-            await _analyticsService.updateUserFromModel(latestUser);
-            await _crashlytics.setCustomKey(
+            await _analyticsService?.updateUserFromModel(latestUser);
+            await _crashlytics?.setCustomKey(
                 'isPremium', latestUser.subscription.isPremium);
             if (latestUser.subscription.plan != null) {
-              await _crashlytics.setCustomKey(
+              await _crashlytics?.setCustomKey(
                   'subscriptionPlan', latestUser.subscription.plan!);
             }
 
@@ -334,7 +338,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         }
       } catch (e, stack) {
         // Registrar error sin interrumpir la experiencia
-        _crashlytics.recordError(e, stack,
+        await _crashlytics?.recordError(e, stack,
             reason: 'Error al verificar estado de suscripción');
 
         debugPrint('Error al verificar suscripción: $e');

@@ -8,9 +8,10 @@ import 'package:goalkeeper_stats/data/models/goalkeeper_pass_model.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 
 class FirebaseGoalkeeperPassesRepository implements GoalkeeperPassesRepository {
+  // Campos finales (no-nulos y nullables)
   final FirebaseFirestore _firestore;
-  final AuthRepository _authRepository;
-  final CacheManager _cacheManager;
+  final AuthRepository _authRepository; // No-nulo
+  final CacheManager _cacheManager; // No-nulo
   
   // Colección donde se almacenan los saques
   static const String _passesCollection = 'goalkeeper_passes';
@@ -26,48 +27,53 @@ class FirebaseGoalkeeperPassesRepository implements GoalkeeperPassesRepository {
   static const int _cacheDuration = 300; // 5 minutos
   
   /// Constructor con posibilidad de inyección para pruebas
-  FirebaseGoalkeeperPassesRepository({
-    // required this.userId, // <--- Parámetro añadido
-    FirebaseFirestore? firestore,
-    AuthRepository? authRepository,
-    CacheManager? cacheManager,
-  }) : 
-    _firestore = firestore ?? FirebaseFirestore.instance,
-    _authRepository = authRepository ?? throw ArgumentError('AuthRepository es requerido'),
-    _cacheManager = cacheManager ?? CacheManager();
-  
-  @override
-  Future<List<GoalkeeperPassModel>> getPassesByUser(String userId) async {
-    try {
-      // Intentar obtener desde caché primero
-      final cacheKey = '$_userPassesCachePrefix$userId';
-      final cachedPasses = await _cacheManager.get<List<GoalkeeperPassModel>>(cacheKey);
-      
-      if (cachedPasses != null) {
-        return cachedPasses;
-      }
-      
-      // Si no hay caché, consultar a Firestore
-      final snapshot = await _firestore
-          .collection('users/$userId/passes') // <--- Ruta corregida
-          .where('userId', isEqualTo: userId)
-          .orderBy('timestamp', descending: true)
-          .get();
-      
-      final passes = snapshot.docs
-          .map((doc) => GoalkeeperPassModel.fromFirestore(doc))
-          .toList();
-      
-      // Guardar en caché
-      await _cacheManager.set(cacheKey, passes, duration: _cacheDuration);
-      
-      return passes;
-    } catch (e) {
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener saques por usuario');
-      throw Exception('Error al obtener la lista de saques');
+  /// Constructor correcto
+FirebaseGoalkeeperPassesRepository({
+  FirebaseFirestore? firestore,
+  required AuthRepository authRepository,
+  CacheManager? cacheManager,
+}) : 
+  _firestore = firestore ?? FirebaseFirestore.instance,
+  _authRepository = authRepository,
+  _cacheManager = cacheManager ?? CacheManager();
+
+/// Método correcto que usa el parámetro userId
+@override
+Future<List<GoalkeeperPassModel>> getPassesByUser(String userId) async {
+  try {
+    // Verificar autenticación
+    final currentUser = await _authRepository.getCurrentUser();
+    if (currentUser == null) throw Exception('Usuario no autenticado');
+    
+    // Intentar obtener desde caché primero
+    final cacheKey = '$_userPassesCachePrefix$userId';
+    final cachedPasses = await _cacheManager.get<List<GoalkeeperPassModel>>(cacheKey);
+    
+    if (cachedPasses != null) {
+      return cachedPasses;
     }
+    
+    // Si no hay caché, consultar a Firestore - USAR LA COLECCIÓN CORRECTA
+    final snapshot = await _firestore
+        .collection(_passesCollection)  // Usar la constante correcta
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .get();
+    
+    final passes = snapshot.docs
+        .map((doc) => GoalkeeperPassModel.fromFirestore(doc))
+        .toList();
+    
+    // Guardar en caché
+    await _cacheManager.set(cacheKey, passes, duration: _cacheDuration);
+    
+    return passes;
+  } catch (e) {
+    FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+        reason: 'Error al obtener saques por usuario');
+    throw Exception('Error al obtener la lista de saques');
   }
+}
   
   @override
   Future<List<GoalkeeperPassModel>> getPassesByMatch(String matchId) async {

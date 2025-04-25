@@ -2,13 +2,9 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
-// En la sección de imports
-import 'package:connectivity_plus/connectivity_plus.dart'; // <-- Añadir esta línea
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Servicio para monitorear el estado de la conexión a internet
-///
-/// Permite a la aplicación adaptarse a cambios en la conectividad
-/// y proporcionar retroalimentación al usuario.
 class ConnectivityService {
   final Connectivity _connectivity = Connectivity();
   late StreamSubscription<ConnectivityResult> _subscription;

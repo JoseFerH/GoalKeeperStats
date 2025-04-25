@@ -12,7 +12,7 @@ class FirebaseShotsRepository implements ShotsRepository {
   final FirebaseFirestore _firestore;
   final AuthRepository _authRepository;
   final CacheManager _cacheManager;
-  
+
   // Colección donde se almacenan los tiros
   static const String _shotsCollection = 'shots';
   
@@ -26,47 +26,53 @@ class FirebaseShotsRepository implements ShotsRepository {
   static const int _cacheDuration = 300; // 5 minutos
   
   /// Constructor con posibilidad de inyección para pruebas
-  FirebaseShotsRepository({
-    FirebaseFirestore? firestore,
-    AuthRepository? authRepository,
-    CacheManager? cacheManager,
-  }) : 
-    _firestore = firestore ?? FirebaseFirestore.instance,
-    _authRepository = authRepository ?? throw ArgumentError('AuthRepository es requerido'),
-    _cacheManager = cacheManager ?? CacheManager();
-  
-  @override
-  Future<List<ShotModel>> getShotsByUser(String userId) async {
-    try {
-      // Intentar obtener desde caché primero
-      final cacheKey = '$_userShotsCachePrefix$userId';
-      final cachedShots = await _cacheManager.get<List<ShotModel>>(cacheKey);
-      
-      if (cachedShots != null) {
-        return cachedShots;
-      }
-      
-      // Si no hay caché, consultar a Firestore
-      final snapshot = await _firestore
-          .collection(_shotsCollection)
-          .where('userId', isEqualTo: userId)
-          .orderBy('timestamp', descending: true)
-          .get();
-      
-      final shots = snapshot.docs
-          .map((doc) => ShotModel.fromFirestore(doc))
-          .toList();
-      
-      // Guardar en caché
-      await _cacheManager.set(cacheKey, shots, duration: _cacheDuration);
-      
-      return shots;
-    } catch (e) {
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por usuario');
-      throw Exception('Error al obtener la lista de tiros');
+  /// Constructor correcto con authRepository requerido
+FirebaseShotsRepository({
+  FirebaseFirestore? firestore,
+  required AuthRepository authRepository,
+  CacheManager? cacheManager,
+}) : 
+  _firestore = firestore ?? FirebaseFirestore.instance,
+  _authRepository = authRepository,
+  _cacheManager = cacheManager ?? CacheManager();
+
+/// Método correcto que usa el parámetro userId
+@override
+Future<List<ShotModel>> getShotsByUser(String userId) async {
+  try {
+    // Verificar autenticación
+    final currentUser = await _authRepository.getCurrentUser();
+    if (currentUser == null) throw Exception('Usuario no autenticado');
+    
+    // Intentar obtener desde caché primero
+    final cacheKey = '$_userShotsCachePrefix$userId';
+    final cachedShots = await _cacheManager.get<List<ShotModel>>(cacheKey);
+    
+    if (cachedShots != null) {
+      return cachedShots;
     }
+    
+    // Si no hay caché, consultar a Firestore
+    final snapshot = await _firestore
+        .collection(_shotsCollection)
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .get();
+    
+    final shots = snapshot.docs
+        .map((doc) => ShotModel.fromFirestore(doc))
+        .toList();
+    
+    // Guardar en caché
+    await _cacheManager.set(cacheKey, shots, duration: _cacheDuration);
+    
+    return shots;
+  } catch (e) {
+    FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+        reason: 'Error al obtener tiros por usuario');
+    throw Exception('Error al obtener la lista de tiros');
   }
+}
   
   @override
   Future<List<ShotModel>> getShotsByMatch(String matchId) async {

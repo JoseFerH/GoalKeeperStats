@@ -10,9 +10,17 @@ import 'dart:ui';
 class FirebaseCrashlyticsService {
   final FirebaseCrashlytics _crashlytics = FirebaseCrashlytics.instance;
 
+  // Getter público para acceder al SDK
+  FirebaseCrashlytics get crashlytics => _crashlytics;
+
   // Puerto para errores de Isolate
   static const String _isolateErrorPortName = 'crash-reporting';
   ReceivePort? _isolateErrorPort;
+  
+  /// Inicialización explícita (llamar después de crear la instancia)
+  Future<void> initialize() async {
+    await _initCrashlytics();
+  }
 
   /// Constructor
   FirebaseCrashlyticsService() {

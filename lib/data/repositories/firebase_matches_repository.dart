@@ -10,11 +10,12 @@ import 'package:goalkeeper_stats/data/models/match_model.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 
 class FirebaseMatchesRepository implements MatchesRepository {
+  // Campos finales (no-nulos y nullables)
   final FirebaseFirestore _firestore;
-  final AuthRepository _authRepository;
+  final AuthRepository _authRepository; // No-nulo
   final ShotsRepository? _shotsRepository;
   final GoalkeeperPassesRepository? _passesRepository;
-  final CacheManager _cacheManager;
+  final CacheManager _cacheManager; // No-nulo
   
   // Colección donde se almacenan los partidos
   static const String _matchesCollection = 'matches';
@@ -29,51 +30,57 @@ class FirebaseMatchesRepository implements MatchesRepository {
   static const int _cacheDuration = 600; // 10 minutos
   
   /// Constructor con posibilidad de inyección para pruebas
-  FirebaseMatchesRepository({
-    FirebaseFirestore? firestore,
-    AuthRepository? authRepository,
-    ShotsRepository? shotsRepository,
-    GoalkeeperPassesRepository? passesRepository,
-    CacheManager? cacheManager,
-  }) : 
-    _firestore = firestore ?? FirebaseFirestore.instance,
-    _authRepository = authRepository ?? throw ArgumentError('AuthRepository es requerido'),
-    _shotsRepository = shotsRepository,
-    _passesRepository = passesRepository,
-    _cacheManager = cacheManager ?? CacheManager();
-  
-  @override
-  Future<List<MatchModel>> getMatchesByUser(String userId) async {
-    try {
-      // Intentar obtener desde caché primero
-      final cacheKey = '$_userMatchesCachePrefix$userId';
-      final cachedMatches = await _cacheManager.get<List<MatchModel>>(cacheKey);
-      
-      if (cachedMatches != null) {
-        return cachedMatches;
-      }
-      
-      // Si no hay caché, consultar a Firestore
-      final snapshot = await _firestore
-          .collection(_matchesCollection)
-          .where('userId', isEqualTo: userId)
-          .orderBy('date', descending: true)
-          .get();
-      
-      final matches = snapshot.docs
-          .map((doc) => MatchModel.fromFirestore(doc))
-          .toList();
-      
-      // Guardar en caché
-      await _cacheManager.set(cacheKey, matches, duration: _cacheDuration);
-      
-      return matches;
-    } catch (e) {
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener partidos por usuario');
-      throw Exception('Error al obtener la lista de partidos');
+  // Constructor correcto
+FirebaseMatchesRepository({
+  FirebaseFirestore? firestore,
+  required AuthRepository authRepository,
+  ShotsRepository? shotsRepository,
+  GoalkeeperPassesRepository? passesRepository,
+  CacheManager? cacheManager,
+}) : 
+  _firestore = firestore ?? FirebaseFirestore.instance,
+  _authRepository = authRepository,
+  _shotsRepository = shotsRepository,
+  _passesRepository = passesRepository,
+  _cacheManager = cacheManager ?? CacheManager();
+
+// Método corregido que usa el userId correctamente
+@override
+Future<List<MatchModel>> getMatchesByUser(String userId) async {
+  try {
+    // Verificar autenticación
+    final currentUser = await _authRepository.getCurrentUser();
+    if (currentUser == null) throw Exception('Usuario no autenticado');
+    
+    // Intentar obtener desde caché primero
+    final cacheKey = '$_userMatchesCachePrefix$userId';
+    final cachedMatches = await _cacheManager.get<List<MatchModel>>(cacheKey);
+    
+    if (cachedMatches != null) {
+      return cachedMatches;
     }
+    
+    // Si no hay caché, consultar a Firestore
+    final snapshot = await _firestore
+        .collection(_matchesCollection)
+        .where('userId', isEqualTo: userId)
+        .orderBy('date', descending: true)
+        .get();
+    
+    final matches = snapshot.docs
+        .map((doc) => MatchModel.fromFirestore(doc))
+        .toList();
+    
+    // Guardar en caché
+    await _cacheManager.set(cacheKey, matches, duration: _cacheDuration);
+    
+    return matches;
+  } catch (e) {
+    FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+        reason: 'Error al obtener partidos por usuario');
+    throw Exception('Error al obtener la lista de partidos');
   }
+}
   
   @override
   Future<MatchModel?> getMatchById(String id) async {

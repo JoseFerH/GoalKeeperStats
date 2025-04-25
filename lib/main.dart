@@ -15,7 +15,7 @@ import 'package:goalkeeper_stats/firebase_options.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/presentation/pages/auth/login_page.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart'; // <-- Añadir esto
+import 'package:flutter/foundation.dart';
 
 // Variables globales para los repositorios
 late AuthRepository authRepository;
@@ -35,13 +35,11 @@ Future<void> main() async {
 
   // Configurar orientación según tipo de dispositivo
   if (isTablet) {
-    // Permitir orientación horizontal para tablets
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
   } else {
-    // Solo vertical para teléfonos
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -56,11 +54,9 @@ Future<void> main() async {
 
     // Configurar Crashlytics
     if (Platform.isAndroid || Platform.isIOS) {
-      // Pasar todos los errores de Flutter a Crashlytics
       FlutterError.onError =
           FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-      // En modo debug, imprime los errores directamente
       if (kDebugMode) {
         await FirebaseCrashlytics.instance
             .setCrashlyticsCollectionEnabled(false);
@@ -72,18 +68,34 @@ Future<void> main() async {
 
     // Inicializar gestor de caché
     cacheManager = CacheManager();
+    await cacheManager.init(); // Asegúrate de inicializar el caché
 
-    // Inicializar repositorios Firebase
+    // Inicializar repositorios Firebase en orden correcto:
+    // 1. Primero el AuthRepository
     authRepository = FirebaseAuthRepository();
-    matchesRepository = FirebaseMatchesRepository();
-    shotsRepository = FirebaseShotsRepository();
-    passesRepository = FirebaseGoalkeeperPassesRepository();
+    
+    // 2. Luego los repositorios que dependen solo del auth
+    shotsRepository = FirebaseShotsRepository(
+      authRepository: authRepository,
+      cacheManager: cacheManager,
+    );
+    
+    passesRepository = FirebaseGoalkeeperPassesRepository(
+      authRepository: authRepository,
+      cacheManager: cacheManager,
+    );
+    
+    // 3. Finalmente el repositorio que depende de todos los demás
+    matchesRepository = FirebaseMatchesRepository(
+      authRepository: authRepository,
+      shotsRepository: shotsRepository,
+      passesRepository: passesRepository,
+      cacheManager: cacheManager,
+    );
 
     debugPrint('Firebase inicializado correctamente');
   } catch (e) {
     debugPrint('Error al inicializar Firebase: $e');
-    // En una situación real, podríamos mostrar un diálogo de error fatal
-    // o incluso forzar la actualización de la app si es necesario
     if (Platform.isAndroid || Platform.isIOS) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
     }
@@ -127,8 +139,8 @@ class GoalkeeperStatsApp extends StatelessWidget {
           useMaterial3: true,
           brightness: Brightness.dark,
         ),
-        themeMode: ThemeMode.system, // Usar tema del sistema
-        home: const LoginPage(), // Comienza con la página de login
+        themeMode: ThemeMode.system,
+        home: const LoginPage(),
       ),
     );
   }
