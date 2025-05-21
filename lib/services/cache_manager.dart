@@ -213,7 +213,53 @@ class CacheManager {
       print('Error al limpiar caché expirada: $e');
     }
   }
+  /// Recupera un valor de la caché incluso si ha expirado
+///
+/// [key] - Clave del valor a recuperar
+/// Retorna null si la clave no existe, pero devuelve el valor aunque esté expirado
+Future<T?> getExpired<T>(String key) async {
+  if (!_isInitialized()) {
+    await init();
+  }
   
+  try {
+    // Verificar si hay valor en memoria
+    if (_memoryCache.containsKey(key)) {
+      final value = _memoryCache[key];
+      if (value is T) {
+        return value;
+      }
+    }
+    
+    // Recuperar de persistencia, ignorando expiración
+    final data = _prefs.getString('$_cacheKeyPrefix$key');
+    if (data == null) {
+      return null;
+    }
+    
+    // Decodificar datos
+    final cacheData = json.decode(data);
+    final value = cacheData['value'];
+    
+    // Convertir según el tipo
+    if (_isBasicType(value)) {
+      // Actualizar caché en memoria
+      _memoryCache[key] = value;
+      return value as T;
+    } else if (value is String) {
+      // Deserializar objetos JSON
+      final decodedValue = _deserializeValue<T>(value);
+      // Actualizar caché en memoria
+      _memoryCache[key] = decodedValue;
+      return decodedValue;
+    }
+    
+    return null;
+  } catch (e) {
+    print('Error al recuperar de caché expirada: $e');
+    return null;
+  }
+}
   /// Verifica si un valor es de tipo básico
   bool _isBasicType(dynamic value) {
     return value == null || 
@@ -221,7 +267,32 @@ class CacheManager {
            value is bool || 
            value is String;
   }
+  /// Verifica si una clave existe en la caché y no ha expirado
+Future<bool> exists(String key) async {
+  if (!_isInitialized()) {
+    await init();
+  }
   
+  try {
+    // Verificar si hay valor en memoria
+    if (_memoryCache.containsKey(key)) {
+      return true;
+    }
+    
+    // Verificar si ha expirado
+    final expireTime = _prefs.getInt('$_expireKeyPrefix$key');
+    if (expireTime == null || expireTime < DateTime.now().millisecondsSinceEpoch) {
+      // Caché expirada o inexistente
+      return false;
+    }
+    
+    // Verificar si existe el valor en persistencia
+    return _prefs.containsKey('$_cacheKeyPrefix$key');
+  } catch (e) {
+    print('Error al verificar existencia en caché: $e');
+    return false;
+  }
+}
   /// Deserializa un valor según su tipo
   T? _deserializeValue<T>(String jsonValue) {
     try {

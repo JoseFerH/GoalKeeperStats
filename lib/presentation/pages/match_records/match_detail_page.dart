@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:goalkeeper_stats/data/models/match_model.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/data/repositories/firebase_shots_repository.dart';
+import 'package:goalkeeper_stats/data/repositories/firebase_auth_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/matches_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/shots_repository.dart';
 import 'package:goalkeeper_stats/presentation/pages/match_records/match_form_page.dart';
@@ -11,6 +12,7 @@ import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:intl/intl.dart';
+import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// Página que muestra los detalles de un partido
 ///
@@ -19,6 +21,7 @@ class MatchDetailPage extends StatefulWidget {
   final MatchModel match;
   final MatchesRepository matchesRepository;
   final UserModel user; // Añadido para verificar permiso premium
+  final String? preselectedMatchId;
   final bool isConnected;
 
   const MatchDetailPage({
@@ -26,6 +29,7 @@ class MatchDetailPage extends StatefulWidget {
     required this.match,
     required this.matchesRepository,
     required this.user,
+    this.preselectedMatchId,
     this.isConnected = true,
   }) : super(key: key);
 
@@ -53,13 +57,13 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     _match = widget.match;
 
     // Inicializar repositorio de Firebase
-    _shotsRepository = FirebaseShotsRepository();
+    _shotsRepository = FirebaseShotsRepository(authRepository: DependencyInjection().authRepository);
 
     _loadData();
 
     // Registrar visualización en Analytics
     _analytics.logEvent(
-      'match_detail_view',
+      name:'match_detail_view',
       parameters: {
         'match_id': _match.id,
         'match_type': _match.type,
@@ -381,7 +385,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
                   TextButton(
                     onPressed: () {
                       // Navegar a pantalla de suscripción
-                      _analytics.logEvent('premium_upgrade_click', parameters: {
+                      _analytics.logEvent(name:'premium_upgrade_click', parameters: {
                         'screen': 'match_detail',
                         'match_id': _match.id
                       });
@@ -790,7 +794,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           onPressed: (widget.isConnected && isPremium)
               ? () {
                   // Navegar a estadísticas detalladas del partido
-                  _analytics.logEvent('match_detailed_stats_view', parameters: {
+                  _analytics.logEvent(name:'match_detailed_stats_view', parameters: {
                     'match_id': _match.id,
                     'match_type': _match.type,
                   });
@@ -838,7 +842,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     }
 
     // Registrar evento en Analytics
-    _analytics.logEvent('add_shot_from_match', parameters: {
+    _analytics.logEvent(name:'add_shot_from_match', parameters: {
       'match_id': _match.id,
       'match_type': _match.type,
     });
@@ -851,8 +855,8 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           user: widget.user,
           matchesRepository: widget.matchesRepository,
           shotsRepository: _shotsRepository,
-          passesRepository: null, // Será proporcionado por la pantalla real
-          preselectedMatchId: _match.id,
+          passesRepository: DependencyInjection().passesRepository, // Será proporcionado por la pantalla real
+          //preselectedMatchId: _match.id,
           isConnected: true,
         ),
       ),
@@ -884,7 +888,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     }
 
     // Registrar evento en Analytics
-    _analytics.logEvent('edit_match', parameters: {
+    _analytics.logEvent(name:'edit_match', parameters: {
       'match_id': _match.id,
       'match_type': _match.type,
     });
@@ -896,6 +900,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           userId: _match.userId,
           matchesRepository: widget.matchesRepository,
           match: _match,
+          
           user: widget.user,
         ),
       ),
@@ -978,7 +983,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
       await _cacheManager.remove(_statsCacheKey);
 
       // Registrar evento en Analytics
-      _analytics.logEvent('delete_match', parameters: {
+      _analytics.logEvent(name:'delete_match', parameters: {
         'match_id': _match.id,
         'match_type': _match.type,
       });

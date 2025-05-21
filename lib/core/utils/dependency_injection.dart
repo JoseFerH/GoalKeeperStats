@@ -17,8 +17,11 @@ import 'package:goalkeeper_stats/data/repositories/firebase_shots_repository.dar
 import 'package:goalkeeper_stats/data/repositories/firebase_matches_repository.dart';
 import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_repository.dart';
 
-// Gestor de caché
+// Servicios
 import 'package:goalkeeper_stats/services/cache_manager.dart';
+import 'package:goalkeeper_stats/services/connectivity_service.dart';
+import 'package:goalkeeper_stats/services/analytics_service.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 enum StorageMode {
   local,
@@ -31,8 +34,8 @@ class DependencyInjection {
   factory DependencyInjection() => _instance;
 
   DependencyInjection._internal() {
-    // Inicializar el gestor de caché cuando se crea la instancia
-    _initializeCacheManager();
+    // Inicializar servicios
+    _initializeServices();
   }
 
   // Por defecto, usar almacenamiento local
@@ -44,13 +47,18 @@ class DependencyInjection {
   MatchesRepository? _matchesRepository;
   GoalkeeperPassesRepository? _passesRepository;
   
-  // Instancia de gestor de caché
+  // Instancias de servicios
   CacheManager? _cacheManager;
+  ConnectivityService? _connectivityService;
+  AnalyticsService? _analyticsService;
 
-  // Inicialización del gestor de caché
-  Future<void> _initializeCacheManager() async {
+  // Inicialización de servicios
+  Future<void> _initializeServices() async {
     _cacheManager = CacheManager();
     await _cacheManager!.init();
+    
+    _connectivityService = ConnectivityService();
+    _analyticsService = AnalyticsService();
   }
   
   // Reiniciar todas las instancias cuando cambie el modo
@@ -81,6 +89,25 @@ class DependencyInjection {
     _passesRepository ??= _createPassesRepository();
     return _passesRepository!;
   }
+  
+  // Getters para los servicios
+  CacheManager get cacheManager {
+    _cacheManager ??= CacheManager()..init();
+    return _cacheManager!;
+  }
+
+  ConnectivityService get connectivityService {
+    _connectivityService ??= ConnectivityService();
+    return _connectivityService!;
+  }
+
+  AnalyticsService get analyticsService {
+    _analyticsService ??= AnalyticsService();
+    return _analyticsService!;
+  }
+  
+  // Crashlytics
+  FirebaseCrashlytics get crashlytics => FirebaseCrashlytics.instance;
 
   // Métodos privados para crear repositorios
   AuthRepository _createAuthRepository() {
@@ -95,7 +122,7 @@ class DependencyInjection {
     } else {
       return FirebaseShotsRepository(
         authRepository: authRepository,
-        cacheManager: _cacheManager,
+        cacheManager: cacheManager,
       );
     }
   }
@@ -106,7 +133,7 @@ class DependencyInjection {
     } else {
       return FirebaseGoalkeeperPassesRepository(
         authRepository: authRepository,
-        cacheManager: _cacheManager,
+        cacheManager: cacheManager,
       );
     }
   }
@@ -119,7 +146,7 @@ class DependencyInjection {
         authRepository: authRepository,
         shotsRepository: shotsRepository,
         passesRepository: passesRepository,
-        cacheManager: _cacheManager,
+        cacheManager: cacheManager,
       );
     }
   }
@@ -136,10 +163,12 @@ class DependencyInjection {
   Future<bool> isFirebaseAvailable() async {
     try {
       // Aquí podríamos hacer una verificación simple de Firebase
-      // Por ejemplo, intentar inicializar Firebase
-      return false; // Por ahora, devolver false
+      return _currentMode == StorageMode.firebase;
     } catch (e) {
       return false;
     }
   }
 }
+
+// Instancia global para compatibilidad con código existente
+final repositoryProvider = DependencyInjection();

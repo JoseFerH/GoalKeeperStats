@@ -12,7 +12,7 @@ class FirebaseShotsRepository implements ShotsRepository {
   final FirebaseFirestore _firestore;
   final AuthRepository _authRepository;
   final CacheManager _cacheManager;
-
+  
   // Colección donde se almacenan los tiros
   static const String _shotsCollection = 'shots';
   

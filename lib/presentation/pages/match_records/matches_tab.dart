@@ -870,6 +870,7 @@ class _MatchesTabState extends State<MatchesTab> {
         builder: (context) => MatchFormPage(
           userId: widget.user.id,
           matchesRepository: widget.matchesRepository,
+        user: widget.user,  // Añadir este parámetro obligatorio
         ),
       ),
     );
@@ -893,6 +894,7 @@ class _MatchesTabState extends State<MatchesTab> {
           match: match,
           matchesRepository: widget.matchesRepository,
           isConnected: widget.isConnected,
+          user: widget.user,  // Añadir este parámetro obligatorio
         ),
       ),
     ).then((result) {

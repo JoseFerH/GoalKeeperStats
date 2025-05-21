@@ -22,6 +22,7 @@ import 'package:goalkeeper_stats/presentation/pages/match_records/matches_tab.da
 import 'package:goalkeeper_stats/presentation/pages/shot_records/shot_entry_tab.dart';
 import 'package:goalkeeper_stats/presentation/pages/stats/stats_tab.dart';
 import 'package:goalkeeper_stats/presentation/pages/subscription/profile_tab.dart';
+import 'package:goalkeeper_stats/services/analytics_service.dart';
 
 /// Página principal del dashboard con navegación por pestañas
 class DashboardPage extends StatefulWidget {

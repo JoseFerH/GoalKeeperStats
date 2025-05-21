@@ -8,6 +8,7 @@ import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// BLoC que maneja la lógica de autenticación con Firebase
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -40,7 +41,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     if (_connectivityService == null) {
       return true; // Si no hay servicio de conectividad, asumir conectado
     }
-    return await _connectivityService.checkConnectivity();
+    return await _connectivityService!.checkConnectivity();
   }
 
   /// Verifica si hay un usuario autenticado al iniciar la app

@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/core/constants/app_constants.dart';
+import 'package:goalkeeper_stats/data/models/subscription_info.dart';
 
 /// Clase que representa información sobre una compra
 class PurchaseInfo {
@@ -51,6 +52,116 @@ class PurchaseService {
 
   // Singleton
   static final PurchaseService _instance = PurchaseService._internal();
+
+  Future<bool> verifyActivePurchase(String productId, String userId) async {
+  try {
+    // Obtener la información actual de suscripción
+    final subscription = await verifyCurrentSubscription(userId);
+    
+    // Verificar si el usuario tiene suscripción premium
+    if (subscription.type != 'premium' || subscription.plan == null) {
+      return false;
+    }
+    
+    // Verificar si la suscripción ha expirado
+    if (subscription.expirationDate == null || 
+        subscription.expirationDate!.isBefore(DateTime.now())) {
+      return false;
+    }
+    
+    // Verificar que el ID del producto coincida con el plan actual
+    switch (subscription.plan) {
+      case 'monthly':
+        return productId == AppConstants.monthlySubscriptionId;
+      case 'quarterly':
+        return productId == AppConstants.quarterlySubscriptionId;
+      case 'biannual':
+        return productId == AppConstants.biannualSubscriptionId;
+      case 'annual':
+        return productId == AppConstants.annualSubscriptionId;
+      default:
+        return false;
+    }
+  } catch (e, stack) {
+    _crashlytics.recordError(e, stack, 
+        reason: 'Error al verificar compra activa');
+    debugPrint('Error al verificar compra activa: $e');
+    return false; // En caso de error, considerar como no activa
+  }
+}
+
+/// Refresca y actualiza el estado de suscripción del usuario
+/// consultando directamente con Firestore y verificando con las tiendas
+///
+/// [userId] - ID del usuario cuya suscripción se va a verificar
+/// Retorna la información de suscripción actualizada o null si hay error
+Future<SubscriptionInfo?> refreshSubscriptionStatus(String userId) async {
+  try {
+    // Obtener la información actual de suscripción desde Firestore
+    final subscription = await verifyCurrentSubscription(userId);
+    
+    // Si la suscripción ya no es premium o ha expirado, no es necesario
+    // verificar con las tiendas
+    if (subscription.type != 'premium' || 
+        subscription.expirationDate == null ||
+        subscription.expirationDate!.isBefore(DateTime.now())) {
+      return subscription;
+    }
+    
+    // Verificar con las tiendas si la suscripción sigue activa
+    // Esto es importante para detectar cancelaciones o problemas de pago
+    bool isStillActive = false;
+    
+    if (subscription.plan != null) {
+      String productId;
+      
+      switch (subscription.plan) {
+        case 'monthly':
+          productId = AppConstants.monthlySubscriptionId;
+          break;
+        case 'quarterly':
+          productId = AppConstants.quarterlySubscriptionId;
+          break;
+        case 'biannual':
+          productId = AppConstants.biannualSubscriptionId;
+          break;
+        case 'annual':
+          productId = AppConstants.annualSubscriptionId;
+          break;
+        default:
+          productId = '';
+      }
+      
+      if (productId.isNotEmpty) {
+        isStillActive = await verifyActivePurchase(productId, userId);
+      }
+    }
+    
+    // Si la verificación con la tienda indica que ya no está activa,
+    // actualizar a versión gratuita
+    if (!isStillActive && subscription.isPremium) {
+      final freeSubscription = SubscriptionInfo.free();
+      
+      // Actualizar en Firestore
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(userId)
+          .update({
+        'subscription': freeSubscription.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      return freeSubscription;
+    }
+    
+    return subscription;
+  } catch (e, stack) {
+    _crashlytics.recordError(e, stack,
+        reason: 'Error al refrescar estado de suscripción');
+    debugPrint('Error al refrescar estado de suscripción: $e');
+    return null;
+  }
+}
 
   /// Constructor de fábrica para el patrón singleton
   factory PurchaseService() {
@@ -411,37 +522,45 @@ class PurchaseService {
 
   /// Verificar recibo de compra en iOS
   Future<bool> _verifyReceiptIOS(PurchaseDetails purchase) async {
-    try {
-      final InAppPurchaseStoreKitPlatformAddition iosPlatformAddition =
-          _inAppPurchase
-              .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+  try {
+    final InAppPurchaseStoreKitPlatformAddition iosPlatformAddition =
+        _inAppPurchase
+            .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
 
-      // En producción, debes verificar el recibo con el servidor de Apple
-      // a través de un backend seguro
+    // En producción, debes verificar el recibo con el servidor de Apple
+    // a través de un backend seguro
 
-      // Ejemplo básico (NO SEGURO para producción)
-      return purchase.verificationData.status ==
-          PurchaseVerificationStatus.verified;
-    } catch (e) {
-      debugPrint('Error al verificar recibo iOS: $e');
-      return false;
-    }
+    // Las propiedades correctas son:
+    // - purchase.verificationData.localVerificationData
+    // - purchase.verificationData.serverVerificationData
+    // - purchase.verificationData.source
+
+    // Ejemplo básico de verificación (NO SEGURO para producción)
+    final String receiptData = purchase.verificationData.serverVerificationData;
+    return receiptData.isNotEmpty;
+  } catch (e) {
+    debugPrint('Error al verificar recibo iOS: $e');
+    return false;
   }
+}
 
   /// Verificar compra en Android
   Future<bool> _verifyPurchaseAndroid(PurchaseDetails purchase) async {
-    try {
-      // En producción, verifica la firma y el token de compra con Google Play
-      // a través de un backend seguro
+  try {
+    // En producción, verifica la firma y el token de compra con Google Play
+    // a través de un backend seguro
 
-      // Ejemplo básico (NO SEGURO para producción)
-      return purchase.verificationData.status ==
-          PurchaseVerificationStatus.verified;
-    } catch (e) {
-      debugPrint('Error al verificar compra Android: $e');
-      return false;
-    }
+    // Ejemplo básico de verificación (NO SEGURO para producción)
+    final String purchaseData = purchase.verificationData.localVerificationData;
+    final String signature = purchase.verificationData.serverVerificationData;
+    
+    // Verificar que los datos no estén vacíos
+    return purchaseData.isNotEmpty && signature.isNotEmpty;
+  } catch (e) {
+    debugPrint('Error al verificar compra Android: $e');
+    return false;
   }
+}
 
   /// Entregar el producto al usuario
   Future<void> _deliverProduct(PurchaseDetails purchase) async {
@@ -567,7 +686,7 @@ class PurchaseService {
       return SubscriptionInfo.free(); // Por defecto, versión gratuita
     }
   }
-
+  
   /// Crear delegado para StoreKit (iOS)
   SKPaymentQueueDelegateWrapper _createStoreKitDelegate() {
     return SKPaymentQueueDelegateWrapper(

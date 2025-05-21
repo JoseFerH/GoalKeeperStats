@@ -21,6 +21,7 @@ class ShotEntryTab extends StatefulWidget {
   final GoalkeeperPassesRepository passesRepository;
   final String? preSelectedMatchId; // Parámetro para preseleccionar partido
   final Function? onDataRegistered; // Callback para notificar registros
+  
   final bool isConnected; // <-- Añadir parámetro
 
   const ShotEntryTab({
@@ -30,6 +31,7 @@ class ShotEntryTab extends StatefulWidget {
     required this.shotsRepository,
     required this.passesRepository,
     required this.isConnected, // <-- Incluir en el constructor
+    
     this.preSelectedMatchId,
     this.onDataRegistered,
   }) : super(key: key);
@@ -745,6 +747,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
           builder: (context) => MatchFormPage(
             userId: widget.user.id,
             matchesRepository: widget.matchesRepository,
+            user: widget.user,  // Añadir este parámetro obligatorio
           ),
         ),
       );

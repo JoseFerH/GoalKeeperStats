@@ -17,6 +17,8 @@ import 'package:goalkeeper_stats/data/repositories/firebase_shots_repository.dar
 import 'package:goalkeeper_stats/data/repositories/firebase_matches_repository.dart';
 import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_repository.dart';
 
+import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
+
 enum StorageMode {
   local,
   firebase,

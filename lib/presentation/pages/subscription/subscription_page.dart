@@ -11,6 +11,7 @@ import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart'; // <-- Añadir esta línea
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 /// Página para gestionar suscripciones premium
 /// Integrada con in_app_purchase para procesar transacciones reales

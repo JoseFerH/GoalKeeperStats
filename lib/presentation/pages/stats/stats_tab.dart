@@ -186,12 +186,12 @@ class _StatsTabState extends State<StatsTab>
           widget.user.id,
           startDate,
           now,
-          limit: 500, // Limitamos para mejorar rendimiento
+          //limit: 500, // Limitamos para mejorar rendimiento
         );
       } else {
         shots = await widget.shotsRepository.getShotsByUser(
           widget.user.id,
-          limit: 500, // Limitamos para mejorar rendimiento
+          //limit: 500, // Limitamos para mejorar rendimiento
         );
       }
 
@@ -220,12 +220,12 @@ class _StatsTabState extends State<StatsTab>
           widget.user.id,
           startDate,
           now,
-          limit: 500, // Limitamos para mejorar rendimiento
+          //limit: 500, // Limitamos para mejorar rendimiento
         );
       } else {
         passes = await widget.passesRepository.getPassesByUser(
           widget.user.id,
-          limit: 500, // Limitamos para mejorar rendimiento
+          //limit: 500, // Limitamos para mejorar rendimiento
         );
       }
 

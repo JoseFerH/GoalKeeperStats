@@ -1,6 +1,7 @@
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/data/models/user_settings.dart';
 import 'package:goalkeeper_stats/data/models/subscription_info.dart';
+import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// Interfaz que define las operaciones de autenticación
 abstract class AuthRepository {

@@ -9,6 +9,7 @@ import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
+import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// Página de inicio de sesión
 ///
@@ -37,7 +38,7 @@ class LoginPage extends StatelessWidget {
                 "Estado autenticado detectado. Navegando al dashboard...");
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => const DashboardPage(),
+                builder: (context) =>  DashboardPage(user: state.user,),
               ),
             );
           }

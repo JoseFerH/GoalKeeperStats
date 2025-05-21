@@ -80,7 +80,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
 
     // Registrar evento de analítica
-    _analyticsService.logEvent('profile_view', parameters: {
+    _analyticsService.logEvent(name: 'profile_view', parameters: {
       'user_id': _currentUser.id,
       'is_premium': _currentUser.subscription.isPremium,
     });
@@ -129,7 +129,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
     try {
       final isActive = await _purchaseService
-          .verifyActivePurchase(_currentUser.subscription.plan);
+          .verifyActivePurchase(_currentUser.subscription.plan ?? '', _currentUser.id);
 
       if (isActive != _currentUser.subscription.isPremium) {
         // Hay una discrepancia entre el estado local y el servidor
@@ -144,7 +144,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
           // Registrar evento en analytics
           _analyticsService
-              .logEvent('subscription_status_updated', parameters: {
+              .logEvent(name: 'subscription_status_updated', parameters: {
             'user_id': _currentUser.id,
             'is_premium': _currentUser.subscription.isPremium,
             'plan': _currentUser.subscription.plan ?? 'none',
@@ -298,7 +298,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   return;
                 }
 
-                _analyticsService.logEvent('edit_profile_click');
+                _analyticsService.logEvent(name: 'edit_profile_click');
 
                 final result = await Navigator.push(
                   context,
@@ -319,7 +319,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   });
 
                   // Registrar evento en analytics
-                  _analyticsService.logEvent('profile_updated');
+                  _analyticsService.logEvent(name: 'profile_updated');
 
                   // Notificar al padre a través del callback si existe
                   if (widget.onUserUpdated != null) {
@@ -453,7 +453,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   }
 
                   // Registrar evento en analytics
-                  _analyticsService.logEvent(isPremium
+                  _analyticsService.logEvent(name: isPremium
                       ? 'manage_subscription_click'
                       : 'upgrade_premium_click');
 
@@ -497,11 +497,11 @@ class _ProfileTabState extends State<ProfileTab> {
 
         // Registrar evento en analytics
         if (wasUpgraded) {
-          _analyticsService.logEvent('subscription_upgraded', parameters: {
+          _analyticsService.logEvent(name: 'subscription_upgraded', parameters: {
             'plan': _currentUser.subscription.plan ?? '',
           });
         } else {
-          _analyticsService.logEvent('subscription_updated');
+          _analyticsService.logEvent(name: 'subscription_updated');
         }
 
         // Notificar al padre a través del callback si existe
@@ -595,7 +595,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
                       // Registrar evento en analytics
                       _analyticsService
-                          .logEvent('language_changed', parameters: {
+                          .logEvent(name: 'language_changed', parameters: {
                         'language': value,
                       });
                     }
@@ -619,7 +619,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
                   // Registrar evento en analytics
                   _analyticsService
-                      .logEvent('notifications_setting_changed', parameters: {
+                      .logEvent(name: 'notifications_setting_changed', parameters: {
                     'enabled': value,
                   });
                 },
@@ -697,7 +697,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   }
 
                   // Registrar evento en analytics
-                  _analyticsService.logEvent('export_data_click');
+                  _analyticsService.logEvent(name: 'export_data_click');
 
                   // TODO: Implementar exportación de datos
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -726,7 +726,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   }
 
                   // Registrar evento en analytics
-                  _analyticsService.logEvent('sync_data_click');
+                  _analyticsService.logEvent(name: 'sync_data_click');
 
                   // TODO: Implementar sincronización manual
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -800,7 +800,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 trailing: Icon(Icons.arrow_forward_ios,
                     size: 16, color: theme.colorScheme.onSurfaceVariant),
                 onTap: () {
-                  _analyticsService.logEvent('privacy_policy_click');
+                  _analyticsService.logEvent(name: 'privacy_policy_click');
                   _launchURL('https://example.com/privacy');
                 },
               ),
@@ -814,7 +814,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 trailing: Icon(Icons.arrow_forward_ios,
                     size: 16, color: theme.colorScheme.onSurfaceVariant),
                 onTap: () {
-                  _analyticsService.logEvent('terms_of_service_click');
+                  _analyticsService.logEvent(name: 'terms_of_service_click');
                   _launchURL('https://example.com/terms');
                 },
               ),
@@ -827,7 +827,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 trailing: Icon(Icons.arrow_forward_ios,
                     size: 16, color: theme.colorScheme.onSurfaceVariant),
                 onTap: () {
-                  _analyticsService.logEvent('support_click');
+                  _analyticsService.logEvent(name: 'support_click');
                   _launchURL('https://example.com/support');
                 },
               ),
@@ -932,7 +932,7 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   void _confirmSignOut() {
-    _analyticsService.logEvent('logout_click');
+    _analyticsService.logEvent(name: 'logout_click');
 
     showDialog(
       context: context,
@@ -967,7 +967,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
     try {
       // Registrar evento en analytics
-      _analyticsService.logEvent('logout');
+      _analyticsService.logEvent(name: 'logout');
 
       // Limpiar datos de usuario en Crashlytics
       await _crashlyticsService.clearUserData();
