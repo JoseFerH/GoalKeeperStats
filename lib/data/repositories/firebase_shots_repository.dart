@@ -254,42 +254,48 @@ Future<List<ShotModel>> getShotsByUser(String userId) async {
   }
   
   @override
-  Future<List<ShotModel>> getShotsByDateRange(
-    String userId, 
-    DateTime startDate, 
-    DateTime endDate
-  ) async {
-    try {
-      // Clave de caché única para este rango de fechas
-      final cacheKey = '${_userShotsCachePrefix}${userId}_${startDate.millisecondsSinceEpoch}_${endDate.millisecondsSinceEpoch}';
-      final cachedShots = await _cacheManager.get<List<ShotModel>>(cacheKey);
-      
-      if (cachedShots != null) {
-        return cachedShots;
-      }
-      
-      final snapshot = await _firestore
-          .collection(_shotsCollection)
-          .where('userId', isEqualTo: userId)
-          .where('timestamp', isGreaterThanOrEqualTo: startDate)
-          .where('timestamp', isLessThanOrEqualTo: endDate)
-          .orderBy('timestamp', descending: true)
-          .get();
-      
-      final shots = snapshot.docs
-          .map((doc) => ShotModel.fromFirestore(doc))
-          .toList();
-      
-      // Cachear por menos tiempo ya que es una consulta específica
-      await _cacheManager.set(cacheKey, shots, duration: 60); // 1 minuto
-      
-      return shots;
-    } catch (e) {
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por rango de fechas');
-      throw Exception('Error al obtener tiros por rango de fechas');
+Future<List<ShotModel>> getShotsByDateRange(
+  String userId, 
+  DateTime startDate, 
+  DateTime endDate,
+  {int? limit}
+) async {
+  try {
+    // Clave de caché única para este rango de fechas
+    final cacheKey = '${_userShotsCachePrefix}${userId}_${startDate.millisecondsSinceEpoch}_${endDate.millisecondsSinceEpoch}${limit != null ? '_limit$limit' : ''}';
+    final cachedShots = await _cacheManager.get<List<ShotModel>>(cacheKey);
+    
+    if (cachedShots != null) {
+      return cachedShots;
     }
+    
+    final snapshot = await _firestore
+        .collection(_shotsCollection)
+        .where('userId', isEqualTo: userId)
+        .where('timestamp', isGreaterThanOrEqualTo: startDate)
+        .where('timestamp', isLessThanOrEqualTo: endDate)
+        .orderBy('timestamp', descending: true)
+        .get();
+    
+    List<ShotModel> shots = snapshot.docs
+        .map((doc) => ShotModel.fromFirestore(doc))
+        .toList();
+    
+    // Aplicar límite si se proporciona
+    if (limit != null && shots.length > limit) {
+      shots = shots.sublist(0, limit);
+    }
+    
+    // Cachear por menos tiempo ya que es una consulta específica
+    await _cacheManager.set(cacheKey, shots, duration: 60); // 1 minuto
+    
+    return shots;
+  } catch (e) {
+    FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+        reason: 'Error al obtener tiros por rango de fechas');
+    throw Exception('Error al obtener tiros por rango de fechas');
   }
+}
   
   @override
   Stream<List<ShotModel>> watchUserShots(String userId) {

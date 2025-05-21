@@ -20,17 +20,18 @@ dependencies:
   # shared_preferences: ^2.2.0
   in_app_purchase: ^3.1.7  # Última versión estable al momento de escribir esto
   connectivity_plus: ^4.0.2
-  firebase_crashlytics: ^3.3.5
-  google_sign_in: ^6.1.5  # Última versión estable al momento de escribir esto
+  firebase_crashlytics: ^4.0.4
+  google_sign_in: ^6.2.1  # Última versión estable al momento de escribir esto
   
   # in_app_purchase: ^3.1.7
-  in_app_purchase_android: ^3.0.6
-  in_app_purchase_storekit: ^3.0.1
+  # in_app_purchase_android: ^3.0.6
+  # in_app_purchase: ^3.1.0
   # firebase_core: ^2.15.1
-  firebase_core: ^2.18.0     # Dependencia base de Firebase
-  firebase_analytics: ^10.6.0  # Última versión estable al momento de escribir esto
-  firebase_auth: ^4.9.0
-  cloud_firestore: ^4.9.1
+  firebase_core: ^3.3.0     # Dependencia base de Firebase
+  firebase_analytics: ^11.2.1  # Última versión estable al momento de escribir esto
+  firebase_auth: ^5.1.4
+  cloud_firestore: ^5.2.1
+  firebase_auth_platform_interface: ^7.4.5 
 
   # Iconos y elementos básicos de UI
   cupertino_icons: ^1.0.5

@@ -20,15 +20,18 @@ class CheckAuthStatusEvent extends AuthEvent {}
 /// Evento para iniciar sesión con Google
 class SignInWithGoogleEvent extends AuthEvent {}
 
-/// Evento para iniciar sesión con credenciales
-class SignInWithCredentialsEvent extends AuthEvent {
-  final String username;
+/// Evento para iniciar sesión con email y contraseña
+class SignInWithEmailPasswordEvent extends AuthEvent {
+  final String email;
   final String password;
 
-  const SignInWithCredentialsEvent(this.username, this.password);
+  const SignInWithEmailPasswordEvent({
+    required this.email,
+    required this.password,
+  });
 
   @override
-  List<Object?> get props => [username, password];
+  List<Object?> get props => [email, password];
 }
 
 /// Evento para cerrar sesión

@@ -11,87 +11,89 @@ import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
 import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
-/// Página de inicio de sesión
-///
-/// Permite a los usuarios iniciar sesión con su cuenta de Google.
-/// Es la primera pantalla que ven los usuarios no autenticados.
-class LoginPage extends StatelessWidget {
+/// Página de inicio de sesión con soporte para email/contraseña y Google
+class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
   @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _isPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Disparar evento de verificación de estado al iniciar
+    context.read<AuthBloc>().add(CheckAuthStatusEvent());
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      // Crear e inyectar el AuthBloc con dependencias de Firebase
-      create: (context) => AuthBloc(
-        authRepository: repositoryProvider.authRepository,
-        analyticsService: AnalyticsService(),
-        crashlytics: FirebaseCrashlytics.instance,
-        connectivityService: repositoryProvider.connectivityService,
-      )..add(
-          CheckAuthStatusEvent()), // Verificar estado de autenticación al inicio
-
-      child: BlocConsumer<AuthBloc, AuthState>(
-        listener: (context, state) {
-          // Navegar al dashboard si el usuario está autenticado
-          if (state is AuthenticatedState) {
-            debugPrint(
-                "Estado autenticado detectado. Navegando al dashboard...");
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) =>  DashboardPage(user: state.user,),
-              ),
-            );
-          }
-
-          // Mostrar mensajes de error
-          if (state is AuthErrorState) {
-            // Registrar el error para análisis
-            FirebaseCrashlytics.instance
-                .log("Error de autenticación en UI: ${state.message}");
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.message),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 5),
-                action: SnackBarAction(
-                  label: 'OK',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  },
-                ),
-              ),
-            );
-          }
-        },
-        builder: (context, state) {
-          return Scaffold(
-            body: Stack(
-              children: [
-                // Fondo y contenido principal
-                _buildContent(context),
-
-                // Indicador de carga
-                if (state is AuthLoadingState)
-                  Container(
-                    color: Colors.black.withOpacity(0.3),
-                    child: const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-              ],
+    return BlocConsumer<AuthBloc, AuthState>(
+      listener: (context, state) {
+        if (state is AuthenticatedState) {
+          debugPrint("Estado autenticado detectado. Navegando al dashboard...");
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => DashboardPage(user: state.user),
             ),
           );
-        },
-      ),
+        }
+
+        if (state is AuthErrorState) {
+          FirebaseCrashlytics.instance
+              .log("Error de autenticación en UI: ${state.message}");
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                },
+              ),
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              _buildContent(context),
+              if (state is AuthLoadingState)
+                Container(
+                  color: Colors.black.withOpacity(0.3),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _buildContent(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        // Gradiente de fondo verde (colores del campo de fútbol)
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -108,7 +110,7 @@ class LoginPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo de la aplicación (temporalmente usando un icono)
+                // Logo de la aplicación
                 Container(
                   padding: const EdgeInsets.all(16.0),
                   decoration: BoxDecoration(
@@ -150,7 +152,126 @@ class LoginPage extends StatelessWidget {
                     color: Colors.white70,
                   ),
                 ),
-                const SizedBox(height: 60),
+                const SizedBox(height: 40),
+
+                // Formulario de email y contraseña
+                Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              prefixIcon: Icon(Icons.email),
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor ingresa tu email';
+                              }
+                              if (!value.contains('@')) {
+                                return 'Por favor ingresa un email válido';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: !_isPasswordVisible,
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña',
+                              prefixIcon: const Icon(Icons.lock),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _isPasswordVisible
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _isPasswordVisible = !_isPasswordVisible;
+                                  });
+                                },
+                              ),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor ingresa tu contraseña';
+                              }
+                              if (value.length < 6) {
+                                return 'La contraseña debe tener al menos 6 caracteres';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _handleEmailSignIn,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                                horizontal: 32,
+                              ),
+                              minimumSize: const Size(double.infinity, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Iniciar Sesión',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Divisor
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 1,
+                        color: Colors.white30,
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'O',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        height: 1,
+                        color: Colors.white30,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
 
                 // Botón de inicio de sesión con Google
                 _buildGoogleSignInButton(context),
@@ -185,15 +306,49 @@ class LoginPage extends StatelessWidget {
     );
   }
 
+  void _handleEmailSignIn() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    try {
+      final isConnected =
+          await repositoryProvider.connectivityService.checkConnectivity();
+
+      if (!isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Registrar evento de analítica
+      AnalyticsService()
+          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
+
+      // Crear evento de inicio de sesión con email/contraseña
+      context.read<AuthBloc>().add(
+        SignInWithEmailPasswordEvent(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        ),
+      );
+    } catch (e) {
+      debugPrint("Error al iniciar sesión: $e");
+    }
+  }
+
   Widget _buildGoogleSignInButton(BuildContext context) {
-    // Verificar conectividad antes de intentar iniciar sesión
     void attemptSignIn() async {
       try {
         final isConnected =
             await repositoryProvider.connectivityService.checkConnectivity();
 
         if (!isConnected) {
-          // Mostrar mensaje si no hay conexión
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -204,15 +359,12 @@ class LoginPage extends StatelessWidget {
           return;
         }
 
-        // Registrar evento de analítica
         AnalyticsService()
             .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
 
-        // Disparar evento de inicio de sesión con Google
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       } catch (e) {
         debugPrint("Error al verificar conectividad: $e");
-        // Intentar login de todas formas
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       }
     }
@@ -234,13 +386,11 @@ class LoginPage extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Logo de Google
           Image.asset(
             'assets/images/google_logo.png',
             height: 24,
             width: 24,
             errorBuilder: (context, error, stackTrace) {
-              // Si no se puede cargar el logo, mostrar un ícono alternativo
               return const Icon(Icons.g_mobiledata,
                   size: 24, color: Colors.red);
             },

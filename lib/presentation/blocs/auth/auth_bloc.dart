@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
@@ -7,8 +8,6 @@ import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// BLoC que maneja la lógica de autenticación con Firebase
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
@@ -29,6 +28,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         super(AuthInitialState()) {
     on<CheckAuthStatusEvent>(_onCheckAuthStatus);
     on<SignInWithGoogleEvent>(_onSignInWithGoogle);
+    on<SignInWithEmailPasswordEvent>(_onSignInWithEmailPassword);
     on<SignOutEvent>(_onSignOut);
     on<UpdateUserEvent>(_onUpdateUser);
     on<UpdateUserSettingsEvent>(_onUpdateUserSettings);
@@ -121,6 +121,88 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       debugPrint('Error en inicio de sesión: $e');
       emit(AuthErrorState(
           'No se pudo iniciar sesión. Por favor intenta nuevamente.'));
+    }
+  }
+
+  /// Maneja el inicio de sesión con email y contraseña
+  Future<void> _onSignInWithEmailPassword(
+    SignInWithEmailPasswordEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoadingState());
+    try {
+      // Verificar conectividad
+      final isOnline = await _checkIsOnline();
+      if (!isOnline) {
+        emit(AuthErrorState(
+            'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'));
+        return;
+      }
+
+      // Intentar iniciar sesión con Firebase Auth directamente
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: event.email,
+        password: event.password,
+      );
+
+      if (credential.user == null) {
+        emit(AuthErrorState('Error al iniciar sesión. Usuario no encontrado.'));
+        return;
+      }
+
+      // Obtener datos completos del usuario desde el repositorio
+      final user = await _authRepository.getCurrentUser();
+
+      if (user != null) {
+        // Registrar evento de inicio de sesión
+        await _analyticsService?.logLogin('email');
+
+        // Configurar identificadores para servicios
+        await _crashlytics?.setUserIdentifier(user.id);
+        await _analyticsService?.setUserId(user.id);
+        await _analyticsService?.updateUserFromModel(user);
+
+        emit(AuthenticatedState(user));
+      } else {
+        // Si no se puede obtener el usuario, cerrar la sesión
+        await FirebaseAuth.instance.signOut();
+        emit(AuthErrorState('Error al obtener datos del usuario. Por favor intenta nuevamente.'));
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage = 'No se encontró un usuario con ese email.';
+          break;
+        case 'wrong-password':
+          errorMessage = 'Contraseña incorrecta.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'Esta cuenta ha sido deshabilitada.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'El email ingresado no es válido.';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Demasiados intentos. Por favor intenta más tarde.';
+          break;
+        default:
+          errorMessage = 'Error de autenticación: ${e.message}';
+      }
+      
+      debugPrint('Error de autenticación: ${e.code} - ${e.message}');
+      emit(AuthErrorState(errorMessage));
+    } catch (e, stack) {
+      // Registrar error en Crashlytics
+      await _crashlytics?.recordError(e, stack,
+          reason: 'Error en inicio de sesión con email/contraseña');
+
+      // Registrar evento de error
+      await _analyticsService?.logError('auth', 'Error en inicio de sesión: $e');
+
+      debugPrint('Error en inicio de sesión: $e');
+      emit(AuthErrorState(
+          'No se pudo iniciar sesión. Por favor verifica tus credenciales e intenta nuevamente.'));
     }
   }
 

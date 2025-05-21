@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "415256305974",
+    "project_id": "goalie-stats-app",
+    "storage_bucket": "goalie-stats-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:415256305974:android:f6ddff138e5c3cc0fbd397",
+        "android_client_info": {
+          "package_name": "com.example.goalkeeper_stats"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "415256305974-iv6n7boqoi8kqkie5p19ubqmgknkqtaj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.goalkeeper_stats",
+            "certificate_hash": "bd682919427bc4203b2da58ff616111a04f96473"
+          }
+        },
+        {
+          "client_id": "415256305974-9smib8kjpro0f7iacq4ctt2gqk3mdf0u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjhwZ3eZ1lD-mVOAyxRTq9qI5VBwqBH1M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "415256305974-9smib8kjpro0f7iacq4ctt2gqk3mdf0u.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "415256305974-fpoqmci5ucg20rj4fckde3e6ji286tg3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.jhurt"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

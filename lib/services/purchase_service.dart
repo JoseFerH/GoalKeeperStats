@@ -196,14 +196,14 @@ Future<SubscriptionInfo?> refreshSubscriptionStatus(String userId) async {
         return false;
       }
 
-      // Configurar tienda para iOS
-      if (Platform.isIOS) {
-        final InAppPurchaseStoreKitPlatformAddition iosPlatformAddition =
-            _inAppPurchase
-                .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
+      // // Configurar tienda para iOS
+      // if (Platform.isIOS) {
+      //   final InAppPurchaseStoreKitPlatformAddition iosPlatformAddition =
+      //       _inAppPurchase
+      //           .getPlatformAddition<InAppPurchaseStoreKitPlatformAddition>();
 
-        await iosPlatformAddition.setDelegate(_createStoreKitDelegate());
-      }
+      //   await iosPlatformAddition.setDelegate(_createStoreKitDelegate());
+      // }
 
       // Escuchar actualizaciones de compras
       _purchaseSubscription = _inAppPurchase.purchaseStream.listen(
@@ -301,47 +301,47 @@ Future<SubscriptionInfo?> refreshSubscriptionStatus(String userId) async {
   }
 
   /// Actualizar suscripción existente
-  Future<bool> updateSubscription(String newProductId) async {
-    if (!_isAvailable || !_isInitialized) {
-      debugPrint('La tienda no está disponible o inicializada');
-      return false;
-    }
+  // Future<bool> updateSubscription(String newProductId) async {
+  //   if (!_isAvailable || !_isInitialized) {
+  //     debugPrint('La tienda no está disponible o inicializada');
+  //     return false;
+  //   }
 
-    try {
-      final ProductDetails? newProduct = getProductById(newProductId);
-      if (newProduct == null) {
-        debugPrint('Producto no encontrado: $newProductId');
-        return false;
-      }
+  //   try {
+  //     final ProductDetails? newProduct = getProductById(newProductId);
+  //     if (newProduct == null) {
+  //       debugPrint('Producto no encontrado: $newProductId');
+  //       return false;
+  //     }
 
-      // En Android, manejar actualización de suscripción
-      if (Platform.isAndroid) {
-        final oldPurchase = await _checkExistingSubscription();
-        if (oldPurchase != null) {
-          // Configurar actualización
-          final GooglePlayPurchaseParam googlePlayParam =
-              GooglePlayPurchaseParam(
-            productDetails: newProduct,
-            changeSubscriptionParam: ChangeSubscriptionParam(
-              oldPurchaseDetails: oldPurchase,
-              prorationMode: ProrationMode.immediateWithTimeProration,
-            ),
-          );
+  //     // En Android, manejar actualización de suscripción
+  //     if (Platform.isAndroid) {
+  //       final oldPurchase = await _checkExistingSubscription();
+  //       if (oldPurchase != null) {
+  //         // Configurar actualización
+  //         final GooglePlayPurchaseParam googlePlayParam =
+  //             GooglePlayPurchaseParam(
+  //           productDetails: newProduct,
+  //           changeSubscriptionParam: ChangeSubscriptionParam(
+  //             oldPurchaseDetails: oldPurchase,
+  //             prorationMode: ProrationMode.immediateWithTimeProration,
+  //           ),
+  //         );
 
-          return await _inAppPurchase.buyNonConsumable(
-              purchaseParam: googlePlayParam);
-        }
-      }
+  //         return await _inAppPurchase.buyNonConsumable(
+  //             purchaseParam: googlePlayParam);
+  //       }
+  //     }
 
-      // Si no hay suscripción anterior o estamos en iOS, realizar compra normal
-      return await purchaseSubscription(newProductId);
-    } catch (e, stack) {
-      _crashlytics.recordError(e, stack, 
-          reason: 'Error al actualizar suscripción');
-      debugPrint('Error al actualizar suscripción: $e');
-      return false;
-    }
-  }
+  //     // Si no hay suscripción anterior o estamos en iOS, realizar compra normal
+  //     return await purchaseSubscription(newProductId);
+  //   } catch (e, stack) {
+  //     _crashlytics.recordError(e, stack, 
+  //         reason: 'Error al actualizar suscripción');
+  //     debugPrint('Error al actualizar suscripción: $e');
+  //     return false;
+  //   }
+  // }
 
   /// Cancelar suscripción actual
   Future<bool> cancelSubscription() async {
@@ -688,16 +688,16 @@ Future<SubscriptionInfo?> refreshSubscriptionStatus(String userId) async {
   }
   
   /// Crear delegado para StoreKit (iOS)
-  SKPaymentQueueDelegateWrapper _createStoreKitDelegate() {
-    return SKPaymentQueueDelegateWrapper(
-      shouldContinueTransaction: (transaction, queue) {
-        return true;
-      },
-      shouldShowPriceConsent: () {
-        return false;
-      },
-    );
-  }
+  // SKPaymentQueueDelegateWrapper _createStoreKitDelegate() {
+  //   return SKPaymentQueueDelegateWrapper(
+  //     shouldContinueTransaction: (transaction, queue) {
+  //       return true;
+  //     },
+  //     shouldShowPriceConsent: () {
+  //       return false;
+  //     },
+  //   );
+  // }
 
   /// Liberar recursos
   void dispose() {

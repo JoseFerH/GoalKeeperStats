@@ -39,7 +39,7 @@ class DependencyInjection {
   }
 
   // Por defecto, usar almacenamiento local
-  StorageMode _currentMode = StorageMode.local;
+  StorageMode _currentMode = StorageMode.firebase;
   
   // Instancias de repositorios (inicializadas bajo demanda)
   AuthRepository? _authRepository;

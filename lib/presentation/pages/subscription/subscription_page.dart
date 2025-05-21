@@ -951,7 +951,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     try {
       final selectedPlan = _plans[_selectedPlan];
       // Actualizar suscripción existente
-      await _purchaseService.updateSubscription(selectedPlan['storeId']);
+      //await _purchaseService.updateSubscription(selectedPlan['storeId']);
       // El resto del proceso se maneja en el listener de compras
     } catch (e) {
       _crashlytics.recordError(

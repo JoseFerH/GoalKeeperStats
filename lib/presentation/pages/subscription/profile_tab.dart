@@ -82,7 +82,7 @@ class _ProfileTabState extends State<ProfileTab> {
     // Registrar evento de analítica
     _analyticsService.logEvent(name: 'profile_view', parameters: {
       'user_id': _currentUser.id,
-      'is_premium': _currentUser.subscription.isPremium,
+      'is_premium': _currentUser.subscription.isPremium.toString(),
     });
 
     _loadPackageInfo();
@@ -146,7 +146,7 @@ class _ProfileTabState extends State<ProfileTab> {
           _analyticsService
               .logEvent(name: 'subscription_status_updated', parameters: {
             'user_id': _currentUser.id,
-            'is_premium': _currentUser.subscription.isPremium,
+            'is_premium': _currentUser.subscription.isPremium.toString(),
             'plan': _currentUser.subscription.plan ?? 'none',
           });
 
@@ -620,7 +620,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   // Registrar evento en analytics
                   _analyticsService
                       .logEvent(name: 'notifications_setting_changed', parameters: {
-                    'enabled': value,
+                    'enabled': value.toString(),
                   });
                 },
               ),

@@ -189,6 +189,90 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
+  // Agrega este método en firebase_auth_repository.dart, antes del método signOut():
+
+  @override
+  Future<UserModel> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // Iniciar sesión con Firebase Auth
+      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      final User? firebaseUser = userCredential.user;
+      
+      if (firebaseUser == null) {
+        throw Exception('No se pudo iniciar sesión con email/contraseña');
+      }
+      
+      // Verificar si el usuario existe en Firestore
+      final userDoc = await _firestore
+          .collection(_usersCollection)
+          .doc(firebaseUser.uid)
+          .get();
+      
+      if (userDoc.exists) {
+        // Si existe, actualizar última conexión
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .update({
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+        
+        final userModel = UserModel.fromFirestore(userDoc);
+        
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, userModel);
+        
+        // Actualizar datos en Crashlytics
+        _updateCrashlyticsUserData(userModel);
+        
+        return userModel;
+      } else {
+        // Si no existe, crear nuevo usuario
+        final newUser = UserModel.newUser(
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName ?? email.split('@')[0],
+          email: firebaseUser.email ?? email,
+          photoUrl: firebaseUser.photoURL,
+        );
+        
+        // Guardar en Firestore
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .set({
+          ...newUser.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+        
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, newUser);
+        
+        // Actualizar datos en Crashlytics
+        _updateCrashlyticsUserData(newUser);
+        
+        return newUser;
+      }
+    } on FirebaseAuthException catch (e) {
+      // Registrar error específico de Firebase Auth
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+          reason: 'Error en inicio de sesión con email: ${e.code}');
+      throw Exception('Error de autenticación: ${e.message}');
+    } catch (e) {
+      // Registrar otros errores
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+          reason: 'Error en inicio de sesión con email/contraseña');
+      throw Exception('Error al iniciar sesión con email/contraseña');
+    }
+  }
+
   @override
   Future<void> signOut() async {
     try {

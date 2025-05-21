@@ -23,6 +23,7 @@ import 'package:goalkeeper_stats/presentation/pages/shot_records/shot_entry_tab.
 import 'package:goalkeeper_stats/presentation/pages/stats/stats_tab.dart';
 import 'package:goalkeeper_stats/presentation/pages/subscription/profile_tab.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 /// Página principal del dashboard con navegación por pestañas
 class DashboardPage extends StatefulWidget {
@@ -61,28 +62,37 @@ class _DashboardPageState extends State<DashboardPage>
   // Estado de conectividad
   bool _isConnected = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _currentUser = widget.user;
+@override
+void initState() {
+  super.initState();
+  _currentUser = widget.user;
 
-    // Inicializar servicios
-    _connectivityService = ConnectivityService();
-    _crashlyticsService = FirebaseCrashlyticsService();
+  // Inicializar servicios
+  _connectivityService = ConnectivityService();
+  _crashlyticsService = FirebaseCrashlyticsService();
 
-    // Configurar Crashlytics con datos de usuario
-    _setupCrashlytics();
+  // Inicializar el AuthBloc con todas sus dependencias
+  final authRepository = FirebaseAuthRepository();
+  _authBloc = AuthBloc(
+    authRepository: authRepository,
+    analyticsService: AnalyticsService(),
+    crashlytics: FirebaseCrashlytics.instance,
+    connectivityService: _connectivityService,
+  );
 
-    // Inicializar repositorios
-    _initRepositories();
+  // Configurar Crashlytics con datos de usuario
+  _setupCrashlytics();
 
-    // Monitorear conectividad
-    _monitorConnectivity();
+  // Inicializar repositorios Firebase
+  _initRepositories();
 
-    // Inicializar controlador de animación
-    _tabController = TabController(length: 5, vsync: this);
-    _tabController.addListener(_handleTabChange);
-  }
+  // Monitorear conectividad
+  _monitorConnectivity();
+
+  // Inicializar controlador de animación
+  _tabController = TabController(length: 5, vsync: this);
+  _tabController.addListener(_handleTabChange);
+}
 
   void _setupCrashlytics() {
     _crashlyticsService.setUserData(
@@ -98,19 +108,11 @@ class _DashboardPageState extends State<DashboardPage>
     _authRepository = FirebaseAuthRepository();
     
     // Inicializar los repositorios
-    _shotsRepository = FirebaseShotsRepository(
-      authRepository: _authRepository,
-    );
-    
-    _passesRepository = FirebaseGoalkeeperPassesRepository(
-      authRepository: _authRepository,
-    );
-    
-    _matchesRepository = FirebaseMatchesRepository(
-      authRepository: _authRepository,
-      shotsRepository: _shotsRepository,
-      passesRepository: _passesRepository,
-    );
+      
+    // Inicializar repositorios Firebase correctamente
+    _matchesRepository = FirebaseMatchesRepository(authRepository: FirebaseAuthRepository());
+    _shotsRepository = FirebaseShotsRepository(authRepository: FirebaseAuthRepository());
+    _passesRepository = FirebaseGoalkeeperPassesRepository(authRepository: FirebaseAuthRepository());
     
     // Inicializar el BLoC de autenticación
     _authBloc = AuthBloc(

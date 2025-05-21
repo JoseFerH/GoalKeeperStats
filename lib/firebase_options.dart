@@ -48,20 +48,20 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    appId: '1:123456789012:android:abcdef1234567890abcdef',
-    messagingSenderId: '123456789012',
-    projectId: 'goalkeeper-stats-app',
-    storageBucket: 'goalkeeper-stats-app.appspot.com',
+    apiKey: 'AIzaSyBjhwZ3eZ1lD-mVOAyxRTq9qI5VBwqBH1M',
+    appId: '1:415256305974:android:f6ddff138e5c3cc0fbd397',
+    messagingSenderId: '415256305974',
+    projectId: 'goalie-stats-app',
+    storageBucket: 'goalie-stats-app.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    appId: '1:123456789012:ios:abcdef1234567890abcdef',
-    messagingSenderId: '123456789012',
-    projectId: 'goalkeeper-stats-app',
-    storageBucket: 'goalkeeper-stats-app.appspot.com',
-    iosClientId: 'com.googleusercontent.apps.123456789012-abcdefghijklmnopqrstuvwxyz',
-    iosBundleId: 'com.example.goalkeeperStatsApp',
+    apiKey: 'AIzaSyCKLpn1y9uDLVV03RvP-0-dCbbBAd3qM5g',
+    appId: '1:415256305974:ios:c1438fc959a35b04fbd397',
+    messagingSenderId: '415256305974',
+    projectId: 'goalie-stats-app',
+    storageBucket: 'goalie-stats-app.firebasestorage.app',
+    iosBundleId: 'com.example.goalkeeperStats',
   );
+
 }
