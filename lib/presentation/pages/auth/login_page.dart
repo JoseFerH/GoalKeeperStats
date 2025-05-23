@@ -9,7 +9,7 @@ import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
-import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
+//import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// Página de inicio de sesión con soporte para email/contraseña y Google
 class LoginPage extends StatefulWidget {
@@ -332,11 +332,11 @@ class _LoginPageState extends State<LoginPage> {
 
       // Crear evento de inicio de sesión con email/contraseña
       context.read<AuthBloc>().add(
-        SignInWithEmailPasswordEvent(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-        ),
-      );
+            SignInWithEmailPasswordEvent(
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+            ),
+          );
     } catch (e) {
       debugPrint("Error al iniciar sesión: $e");
     }
