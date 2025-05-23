@@ -63,6 +63,11 @@ class UserModel {
     );
   }
 
+  // NUEVO: Método para crear desde JSON (para caché)
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel.fromMap(json);
+  }
+
   // Convertir a Map para Firestore
   Map<String, dynamic> toMap() {
     return {
@@ -73,6 +78,19 @@ class UserModel {
       'subscription': subscription.toMap(),
       'settings': settings.toMap(),
       'updatedAt': FieldValue.serverTimestamp(), // Usar timestamp del servidor
+    };
+  }
+
+  // NUEVO: Método para convertir a JSON (para caché)
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'photoUrl': photoUrl,
+      'team': team,
+      'subscription': subscription.toMap(),
+      'settings': settings.toMap(),
     };
   }
 

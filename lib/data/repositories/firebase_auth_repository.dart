@@ -1,5 +1,3 @@
-// lib/data/repositories/firebase_auth_repository.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -105,6 +103,9 @@ class FirebaseAuthRepository implements AuthRepository {
   @override
   Future<UserModel> signInWithGoogle() async {
     try {
+      // Limpiar cualquier sesión previa de Google
+      await _googleSignIn.signOut();
+
       // Iniciar el flujo de autenticación de Google
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
@@ -116,19 +117,43 @@ class FirebaseAuthRepository implements AuthRepository {
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
+      // Verificar que tenemos los tokens necesarios
+      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+        throw Exception('No se pudieron obtener los tokens de autenticación');
+      }
+
       // Crear credencial para Firebase
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // Iniciar sesión en Firebase
-      final userCredential =
-          await _firebaseAuth.signInWithCredential(credential);
+      // Iniciar sesión en Firebase con manejo de errores mejorado
+      UserCredential userCredential;
+      try {
+        userCredential = await _firebaseAuth.signInWithCredential(credential);
+      } on FirebaseAuthException catch (e) {
+        // Manejar errores específicos de Firebase Auth
+        switch (e.code) {
+          case 'account-exists-with-different-credential':
+            throw Exception(
+                'Esta cuenta ya existe con un método de inicio de sesión diferente');
+          case 'invalid-credential':
+            throw Exception('Credenciales inválidas');
+          case 'operation-not-allowed':
+            throw Exception(
+                'El inicio de sesión con Google no está habilitado');
+          case 'user-disabled':
+            throw Exception('Esta cuenta ha sido deshabilitada');
+          default:
+            throw Exception('Error de autenticación: ${e.message}');
+        }
+      }
+
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser == null) {
-        throw Exception('No se pudo iniciar sesión con Google');
+        throw Exception('No se pudo completar el inicio de sesión');
       }
 
       // Verificar si el usuario ya existe en Firestore
@@ -159,9 +184,9 @@ class FirebaseAuthRepository implements AuthRepository {
         // Si no existe, crear nuevo usuario
         final newUser = UserModel.newUser(
           id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? 'Usuario',
-          email: firebaseUser.email ?? '',
-          photoUrl: firebaseUser.photoURL,
+          name: firebaseUser.displayName ?? googleUser.displayName ?? 'Usuario',
+          email: firebaseUser.email ?? googleUser.email,
+          photoUrl: firebaseUser.photoURL ?? googleUser.photoUrl,
         );
 
         // Guardar en Firestore
@@ -182,16 +207,19 @@ class FirebaseAuthRepository implements AuthRepository {
 
         return newUser;
       }
+    } on FirebaseAuthException catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+          reason:
+              'FirebaseAuthException en inicio de sesión con Google: ${e.code}');
+      throw Exception('Error de autenticación: ${e.message}');
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
           reason: 'Error en inicio de sesión con Google');
-      throw Exception('Error al iniciar sesión con Google');
+      throw Exception('Error al iniciar sesión con Google: ${e.toString()}');
     }
   }
 
-  // Agrega este método en firebase_auth_repository.dart, antes del método signOut():
-
-  @override
+  /// Método para inicio de sesión con email y contraseña
   Future<UserModel> signInWithEmailPassword({
     required String email,
     required String password,
@@ -202,19 +230,19 @@ class FirebaseAuthRepository implements AuthRepository {
         email: email,
         password: password,
       );
-      
+
       final User? firebaseUser = userCredential.user;
-      
+
       if (firebaseUser == null) {
         throw Exception('No se pudo iniciar sesión con email/contraseña');
       }
-      
+
       // Verificar si el usuario existe en Firestore
       final userDoc = await _firestore
           .collection(_usersCollection)
           .doc(firebaseUser.uid)
           .get();
-      
+
       if (userDoc.exists) {
         // Si existe, actualizar última conexión
         await _firestore
@@ -223,15 +251,15 @@ class FirebaseAuthRepository implements AuthRepository {
             .update({
           'lastLogin': FieldValue.serverTimestamp(),
         });
-        
+
         final userModel = UserModel.fromFirestore(userDoc);
-        
+
         // Actualizar caché
         await _cacheManager.set(_userCacheKey, userModel);
-        
+
         // Actualizar datos en Crashlytics
         _updateCrashlyticsUserData(userModel);
-        
+
         return userModel;
       } else {
         // Si no existe, crear nuevo usuario
@@ -241,7 +269,7 @@ class FirebaseAuthRepository implements AuthRepository {
           email: firebaseUser.email ?? email,
           photoUrl: firebaseUser.photoURL,
         );
-        
+
         // Guardar en Firestore
         await _firestore
             .collection(_usersCollection)
@@ -251,13 +279,13 @@ class FirebaseAuthRepository implements AuthRepository {
           'createdAt': FieldValue.serverTimestamp(),
           'lastLogin': FieldValue.serverTimestamp(),
         });
-        
+
         // Actualizar caché
         await _cacheManager.set(_userCacheKey, newUser);
-        
+
         // Actualizar datos en Crashlytics
         _updateCrashlyticsUserData(newUser);
-        
+
         return newUser;
       }
     } on FirebaseAuthException catch (e) {
@@ -439,7 +467,7 @@ class FirebaseAuthRepository implements AuthRepository {
             reason: 'Error en authStateChanges');
 
         // Intentar usar caché como fallback
-        return _cacheManager.get<UserModel>(_userCacheKey);
+        return await _cacheManager.get<UserModel>(_userCacheKey);
       }
     });
   }

@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:goalkeeper_stats/data/repository_provider.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
-//import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
+import 'package:provider/provider.dart';
 
 /// Página de inicio de sesión con soporte para email/contraseña y Google
 class LoginPage extends StatefulWidget {
@@ -312,8 +311,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     try {
-      final isConnected =
-          await repositoryProvider.connectivityService.checkConnectivity();
+      // Obtener el servicio de conectividad desde el Provider
+      final connectivityService =
+          Provider.of<ConnectivityService>(context, listen: false);
+      final isConnected = await connectivityService.checkConnectivity();
 
       if (!isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -339,14 +340,26 @@ class _LoginPageState extends State<LoginPage> {
           );
     } catch (e) {
       debugPrint("Error al iniciar sesión: $e");
+      // Si hay error obteniendo el servicio, continuar con el inicio de sesión
+      AnalyticsService()
+          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
+
+      context.read<AuthBloc>().add(
+            SignInWithEmailPasswordEvent(
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+            ),
+          );
     }
   }
 
   Widget _buildGoogleSignInButton(BuildContext context) {
     void attemptSignIn() async {
       try {
-        final isConnected =
-            await repositoryProvider.connectivityService.checkConnectivity();
+        // Obtener el servicio de conectividad desde el Provider
+        final connectivityService =
+            Provider.of<ConnectivityService>(context, listen: false);
+        final isConnected = await connectivityService.checkConnectivity();
 
         if (!isConnected) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -365,6 +378,10 @@ class _LoginPageState extends State<LoginPage> {
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       } catch (e) {
         debugPrint("Error al verificar conectividad: $e");
+        // Si hay error obteniendo el servicio, continuar con el inicio de sesión
+        AnalyticsService()
+            .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
+
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       }
     }

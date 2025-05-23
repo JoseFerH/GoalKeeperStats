@@ -3,10 +3,7 @@ import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/data/models/user_settings.dart';
 import 'package:goalkeeper_stats/data/models/subscription_info.dart';
 
-/// Eventos relacionados con la autenticación
-///
-/// Define todas las acciones que pueden desencadenar cambios
-/// en el estado de autenticación.
+/// Eventos base para el AuthBloc
 abstract class AuthEvent extends Equatable {
   const AuthEvent();
 
@@ -14,7 +11,7 @@ abstract class AuthEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// Evento para verificar si el usuario ya está autenticado
+/// Evento para verificar el estado de autenticación
 class CheckAuthStatusEvent extends AuthEvent {}
 
 /// Evento para iniciar sesión con Google
@@ -37,7 +34,7 @@ class SignInWithEmailPasswordEvent extends AuthEvent {
 /// Evento para cerrar sesión
 class SignOutEvent extends AuthEvent {}
 
-/// Evento para actualizar datos del usuario
+/// Evento para actualizar el perfil del usuario
 class UpdateUserEvent extends AuthEvent {
   final UserModel user;
 
@@ -47,32 +44,52 @@ class UpdateUserEvent extends AuthEvent {
   List<Object?> get props => [user];
 }
 
-/// Evento para actualizar configuraciones de usuario
+/// Evento para actualizar las configuraciones del usuario
 class UpdateUserSettingsEvent extends AuthEvent {
+  final String userId;
   final UserSettings settings;
   final bool allowOffline;
 
-  /// Constructor para actualizar configuraciones
-  /// [allowOffline] indica si se permite guardar configuraciones localmente
-  /// cuando no hay conexión a internet
-  const UpdateUserSettingsEvent(this.settings, {this.allowOffline = false});
+  const UpdateUserSettingsEvent({
+    required this.userId,
+    required this.settings,
+    this.allowOffline = false,
+  });
 
   @override
-  List<Object?> get props => [settings, allowOffline];
+  List<Object?> get props => [userId, settings, allowOffline];
 }
 
-/// Evento para actualizar información de suscripción
+/// Evento para actualizar la suscripción del usuario
 class UpdateSubscriptionEvent extends AuthEvent {
+  final String userId;
   final SubscriptionInfo subscription;
 
-  const UpdateSubscriptionEvent(this.subscription);
+  const UpdateSubscriptionEvent({
+    required this.userId,
+    required this.subscription,
+  });
 
   @override
-  List<Object?> get props => [subscription];
+  List<Object?> get props => [userId, subscription];
 }
 
-/// Evento para verificar el estado actual de la suscripción
-///
-/// Este evento se usa para actualizaciones periódicas del estado
-/// de la suscripción desde el servidor
-class VerifySubscriptionEvent extends AuthEvent {}
+/// Evento para eliminar la cuenta del usuario
+class DeleteAccountEvent extends AuthEvent {
+  final String userId;
+
+  const DeleteAccountEvent(this.userId);
+
+  @override
+  List<Object?> get props => [userId];
+}
+
+/// Evento para verificar el estado de la suscripción
+class VerifySubscriptionEvent extends AuthEvent {
+  final String userId;
+
+  const VerifySubscriptionEvent(this.userId);
+
+  @override
+  List<Object?> get props => [userId];
+}
