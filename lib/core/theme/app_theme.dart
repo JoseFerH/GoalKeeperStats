@@ -123,7 +123,7 @@ class AppTheme {
     ),
 
     // Tarjetas mejoradas
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: darkCardColor,
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

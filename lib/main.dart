@@ -22,6 +22,7 @@ import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
 import 'package:goalkeeper_stats/services/purchase_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
+import 'package:goalkeeper_stats/core/constants/app_constants.dart';
 
 // Variables globales para los repositorios
 late AuthRepository authRepository;
@@ -65,15 +66,16 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    
+
     firebaseInitialized = true;
-    debugPrint('Firebase inicializado correctamente');
+    debugPrint('✅ Firebase inicializado correctamente');
 
     // Configurar Crashlytics solo después de que Firebase esté inicializado
     if (!kDebugMode && (Platform.isAndroid || Platform.isIOS)) {
-      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
       await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-      
+
       // Capturar errores no manejados
       PlatformDispatcher.instance.onError = (error, stack) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -82,15 +84,31 @@ Future<void> main() async {
     } else {
       // En modo debug, desactivar Crashlytics
       if (Platform.isAndroid || Platform.isIOS) {
-        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+        await FirebaseCrashlytics.instance
+            .setCrashlyticsCollectionEnabled(false);
       }
     }
+
+    // Inicializar servicios
     connectivityService = ConnectivityService();
     crashlyticsService = FirebaseCrashlyticsService();
-    purchaseService = PurchaseService();
     analyticsService = AnalyticsService();
+
+    // Inicializar PurchaseService
+    purchaseService = PurchaseService();
+    debugPrint('🛒 Inicializando PurchaseService...');
+
+    // Inicializar el servicio de compras con los IDs de productos
+    final purchaseInitialized = await purchaseService.initialize();
+
+    if (purchaseInitialized) {
+      debugPrint('✅ PurchaseService inicializado correctamente');
+    } else {
+      debugPrint(
+          '⚠️ PurchaseService no se pudo inicializar (las compras pueden no estar disponibles)');
+    }
   } catch (e, stack) {
-    debugPrint('Error al inicializar Firebase: $e');
+    debugPrint('❌ Error al inicializar Firebase o servicios: $e');
     debugPrint('Stack trace: $stack');
   }
 
@@ -98,9 +116,9 @@ Future<void> main() async {
   try {
     cacheManager = CacheManager();
     await cacheManager.init();
-    debugPrint('Cache manager inicializado correctamente');
+    debugPrint('✅ Cache manager inicializado correctamente');
   } catch (e) {
-    debugPrint('Error al inicializar cache manager: $e');
+    debugPrint('❌ Error al inicializar cache manager: $e');
     // Crear un cache manager básico si falla
     cacheManager = CacheManager();
   }
@@ -110,22 +128,22 @@ Future<void> main() async {
     try {
       // 1. Inicializar AuthRepository
       authRepository = FirebaseAuthRepository();
-      debugPrint('AuthRepository inicializado');
-      
+      debugPrint('✅ AuthRepository inicializado');
+
       // 2. Inicializar ShotsRepository
       shotsRepository = FirebaseShotsRepository(
         authRepository: authRepository,
         cacheManager: cacheManager,
       );
-      debugPrint('ShotsRepository inicializado');
-      
+      debugPrint('✅ ShotsRepository inicializado');
+
       // 3. Inicializar PassesRepository
       passesRepository = FirebaseGoalkeeperPassesRepository(
         authRepository: authRepository,
         cacheManager: cacheManager,
       );
-      debugPrint('PassesRepository inicializado');
-      
+      debugPrint('✅ PassesRepository inicializado');
+
       // 4. Inicializar MatchesRepository
       matchesRepository = FirebaseMatchesRepository(
         authRepository: authRepository,
@@ -133,10 +151,9 @@ Future<void> main() async {
         passesRepository: passesRepository,
         cacheManager: cacheManager,
       );
-      debugPrint('MatchesRepository inicializado');
-      
+      debugPrint('✅ MatchesRepository inicializado');
     } catch (e, stack) {
-      debugPrint('Error al inicializar repositorios: $e');
+      debugPrint('❌ Error al inicializar repositorios: $e');
       debugPrint('Stack trace: $stack');
       // Aquí podrías crear repositorios mock o fallback si es necesario
     }
@@ -150,7 +167,7 @@ Future<void> main() async {
 
 class GoalkeeperStatsApp extends StatelessWidget {
   final bool firebaseInitialized;
-  
+
   const GoalkeeperStatsApp({
     super.key,
     required this.firebaseInitialized,
@@ -203,7 +220,7 @@ class GoalkeeperStatsApp extends StatelessWidget {
         Provider<FirebaseCrashlyticsService>.value(value: crashlyticsService),
         Provider<PurchaseService>.value(value: purchaseService),
         Provider<AnalyticsService>.value(value: analyticsService),
-        
+
         // Agregar AuthBloc aquí
         BlocProvider<AuthBloc>(
           create: (context) => AuthBloc(
