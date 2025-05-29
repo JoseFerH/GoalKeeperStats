@@ -58,10 +58,28 @@ class MatchModel {
   }
 
   factory MatchModel.fromMap(Map<String, dynamic> map, String id) {
+    // 🔧 CORRECCIÓN: Mejor manejo de fechas desde Firestore
+    DateTime parsedDate;
+    final dateValue = map['date'];
+
+    if (dateValue is Timestamp) {
+      // Si viene como Timestamp de Firestore
+      parsedDate = dateValue.toDate();
+    } else if (dateValue is int) {
+      // Si viene como milliseconds
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(dateValue);
+    } else if (dateValue is String) {
+      // Si viene como string, intentar parsear
+      parsedDate = DateTime.tryParse(dateValue) ?? DateTime.now();
+    } else {
+      // Fallback
+      parsedDate = DateTime.now();
+    }
+
     return MatchModel(
       id: id,
       userId: map['userId'] ?? '',
-      date: DateTime.fromMillisecondsSinceEpoch(map['date'] ?? 0),
+      date: parsedDate,
       type: map['type'] ?? TYPE_FRIENDLY,
       opponent: map['opponent'],
       venue: map['venue'],
@@ -74,15 +92,15 @@ class MatchModel {
   Map<String, dynamic> toMap() {
     return {
       'userId': userId,
-      'date': date.millisecondsSinceEpoch,
+      'date':
+          date.millisecondsSinceEpoch, // ✅ Siempre guardar como milliseconds
       'type': type,
       'opponent': opponent,
       'venue': venue,
       'notes': notes,
       'goalsScored': goalsScored,
       'goalsConceded': goalsConceded,
-      'updatedAt':
-          FieldValue.serverTimestamp(), // Mejor usar timestamp del servidor
+      'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 
@@ -146,4 +164,18 @@ class MatchModel {
       goalsConceded: goalsConceded ?? this.goalsConceded,
     );
   }
+
+  @override
+  String toString() {
+    return 'MatchModel(id: $id, userId: $userId, date: $date, type: $type, opponent: $opponent)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is MatchModel && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }

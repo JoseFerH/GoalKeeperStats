@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
+import 'package:goalkeeper_stats/data/models/match_model.dart';
 
 /// Administrador de caché para almacenar y recuperar datos localmente
 ///
@@ -8,7 +9,7 @@ import 'package:goalkeeper_stats/data/models/user_model.dart';
 /// el rendimiento y proporcionar funcionalidad sin conexión.
 class CacheManager {
   static final CacheManager _instance = CacheManager._internal();
-  late SharedPreferences _prefs;
+  SharedPreferences? _prefs;
   final Map<String, dynamic> _memoryCache = {};
 
   // Prefijo para claves de caché
@@ -25,8 +26,10 @@ class CacheManager {
 
   /// Inicializar el administrador de caché
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
-    _cleanExpiredCache();
+    if (_prefs == null) {
+      _prefs = await SharedPreferences.getInstance();
+      _cleanExpiredCache();
+    }
   }
 
   /// Almacena un valor en caché con tiempo de expiración opcional
@@ -52,28 +55,45 @@ class CacheManager {
       String jsonValue;
       String valueType = T.toString();
 
+      // 🔧 CORRECCIÓN: Manejo mejorado de tipos
       if (value is UserModel) {
         jsonValue = json.encode(value.toJson());
         valueType = 'UserModel';
+      } else if (value is MatchModel) {
+        jsonValue = json.encode(value.toMap());
+        valueType = 'MatchModel';
+      } else if (value is List<MatchModel>) {
+        // 🔧 CORRECCIÓN PRINCIPAL: Manejo correcto de listas de MatchModel
+        final listData = value.map((match) => match.toMap()).toList();
+        jsonValue = json.encode(listData);
+        valueType = 'List<MatchModel>';
+      } else if (value is List) {
+        // Para otras listas
+        jsonValue = json.encode(value);
+        valueType = 'List';
       } else if (_isBasicType(value)) {
         jsonValue = value.toString();
+        valueType = value.runtimeType.toString();
       } else {
+        // Para otros tipos complejos
         jsonValue = json.encode(value);
+        valueType = value.runtimeType.toString();
       }
 
       // Guardar en persistencia con información de tipo
       final cacheData = {
         'value': jsonValue,
         'type': valueType,
+        'cachedAt': DateTime.now().millisecondsSinceEpoch,
       };
 
       // Guardar datos y tiempo de expiración
-      await _prefs.setString('$_cacheKeyPrefix$key', json.encode(cacheData));
-      await _prefs.setInt('$_expireKeyPrefix$key', expireTime);
+      await _prefs!.setString('$_cacheKeyPrefix$key', json.encode(cacheData));
+      await _prefs!.setInt('$_expireKeyPrefix$key', expireTime);
 
       return true;
     } catch (e) {
-      print('Error al guardar en caché: $e');
+      print('❌ Error al guardar en caché: $e');
       return false;
     }
   }
@@ -97,7 +117,7 @@ class CacheManager {
       }
 
       // Verificar si ha expirado
-      final expireTime = _prefs.getInt('$_expireKeyPrefix$key');
+      final expireTime = _prefs!.getInt('$_expireKeyPrefix$key');
       if (expireTime == null ||
           expireTime < DateTime.now().millisecondsSinceEpoch) {
         // Caché expirada o inexistente
@@ -105,7 +125,7 @@ class CacheManager {
       }
 
       // Recuperar de persistencia
-      final data = _prefs.getString('$_cacheKeyPrefix$key');
+      final data = _prefs!.getString('$_cacheKeyPrefix$key');
       if (data == null) {
         return null;
       }
@@ -115,17 +135,37 @@ class CacheManager {
       final valueString = cacheData['value'];
       final type = cacheData['type'];
 
-      // Deserializar según el tipo
+      // 🔧 CORRECCIÓN: Deserialización mejorada
       dynamic deserializedValue;
 
       if (type == 'UserModel' && T == UserModel) {
         deserializedValue = UserModel.fromJson(json.decode(valueString));
-      } else if (_isBasicType(valueString) ||
-          type == 'String' ||
+      } else if (type == 'MatchModel' && T == MatchModel) {
+        final matchData = json.decode(valueString);
+        deserializedValue =
+            MatchModel.fromMap(matchData, matchData['id'] ?? '');
+      } else if (type == 'List<MatchModel>') {
+        // 🔧 CORRECCIÓN PRINCIPAL: Deserialización correcta de listas de MatchModel
+        final listData = json.decode(valueString) as List;
+        deserializedValue = listData.map((matchData) {
+          return MatchModel.fromMap(matchData, matchData['id'] ?? '');
+        }).toList();
+      } else if (type == 'List') {
+        deserializedValue = json.decode(valueString);
+      } else if (type == 'String' ||
           type == 'int' ||
           type == 'double' ||
           type == 'bool') {
-        deserializedValue = valueString;
+        // Tipos básicos
+        if (type == 'int') {
+          deserializedValue = int.tryParse(valueString) ?? 0;
+        } else if (type == 'double') {
+          deserializedValue = double.tryParse(valueString) ?? 0.0;
+        } else if (type == 'bool') {
+          deserializedValue = valueString.toLowerCase() == 'true';
+        } else {
+          deserializedValue = valueString;
+        }
       } else {
         // Para otros tipos complejos
         deserializedValue = json.decode(valueString);
@@ -140,7 +180,7 @@ class CacheManager {
 
       return null;
     } catch (e) {
-      print('Error al recuperar de caché: $e');
+      print('❌ Error al recuperar de caché: $e');
       return null;
     }
   }
@@ -158,12 +198,12 @@ class CacheManager {
       _memoryCache.remove(key);
 
       // Eliminar de persistencia
-      await _prefs.remove('$_cacheKeyPrefix$key');
-      await _prefs.remove('$_expireKeyPrefix$key');
+      await _prefs!.remove('$_cacheKeyPrefix$key');
+      await _prefs!.remove('$_expireKeyPrefix$key');
 
       return true;
     } catch (e) {
-      print('Error al eliminar de caché: $e');
+      print('❌ Error al eliminar de caché: $e');
       return false;
     }
   }
@@ -179,7 +219,7 @@ class CacheManager {
       _memoryCache.clear();
 
       // Obtener todas las claves de caché
-      final keys = _prefs
+      final keys = _prefs!
           .getKeys()
           .where((key) =>
               key.startsWith(_cacheKeyPrefix) ||
@@ -188,23 +228,19 @@ class CacheManager {
 
       // Eliminar todas las claves
       for (final key in keys) {
-        await _prefs.remove(key);
+        await _prefs!.remove(key);
       }
 
       return true;
     } catch (e) {
-      print('Error al limpiar caché: $e');
+      print('❌ Error al limpiar caché: $e');
       return false;
     }
   }
 
   /// Verifica si el administrador de caché está inicializado
   bool _isInitialized() {
-    try {
-      return _prefs != null;
-    } catch (e) {
-      return false;
-    }
+    return _prefs != null;
   }
 
   /// Limpia entradas de caché expiradas
@@ -213,29 +249,29 @@ class CacheManager {
 
     try {
       // Obtener todas las claves de expiración
-      final expireKeys = _prefs
+      final expireKeys = _prefs!
           .getKeys()
           .where((key) => key.startsWith(_expireKeyPrefix))
           .toList();
 
       // Verificar cada clave
       for (final expireKey in expireKeys) {
-        final expireTime = _prefs.getInt(expireKey);
+        final expireTime = _prefs!.getInt(expireKey);
 
         if (expireTime != null && expireTime < now) {
           // Extraer la clave base
           final baseKey = expireKey.substring(_expireKeyPrefix.length);
 
           // Eliminar clave expirada
-          await _prefs.remove('$_cacheKeyPrefix$baseKey');
-          await _prefs.remove(expireKey);
+          await _prefs!.remove('$_cacheKeyPrefix$baseKey');
+          await _prefs!.remove(expireKey);
 
           // Eliminar de memoria
           _memoryCache.remove(baseKey);
         }
       }
     } catch (e) {
-      print('Error al limpiar caché expirada: $e');
+      print('❌ Error al limpiar caché expirada: $e');
     }
   }
 
@@ -258,7 +294,7 @@ class CacheManager {
       }
 
       // Recuperar de persistencia, ignorando expiración
-      final data = _prefs.getString('$_cacheKeyPrefix$key');
+      final data = _prefs!.getString('$_cacheKeyPrefix$key');
       if (data == null) {
         return null;
       }
@@ -268,17 +304,35 @@ class CacheManager {
       final valueString = cacheData['value'];
       final type = cacheData['type'];
 
-      // Deserializar según el tipo
+      // Deserializar según el tipo (mismo código que en get)
       dynamic deserializedValue;
 
       if (type == 'UserModel' && T == UserModel) {
         deserializedValue = UserModel.fromJson(json.decode(valueString));
-      } else if (_isBasicType(valueString) ||
-          type == 'String' ||
+      } else if (type == 'MatchModel' && T == MatchModel) {
+        final matchData = json.decode(valueString);
+        deserializedValue =
+            MatchModel.fromMap(matchData, matchData['id'] ?? '');
+      } else if (type == 'List<MatchModel>') {
+        final listData = json.decode(valueString) as List;
+        deserializedValue = listData.map((matchData) {
+          return MatchModel.fromMap(matchData, matchData['id'] ?? '');
+        }).toList();
+      } else if (type == 'List') {
+        deserializedValue = json.decode(valueString);
+      } else if (type == 'String' ||
           type == 'int' ||
           type == 'double' ||
           type == 'bool') {
-        deserializedValue = valueString;
+        if (type == 'int') {
+          deserializedValue = int.tryParse(valueString) ?? 0;
+        } else if (type == 'double') {
+          deserializedValue = double.tryParse(valueString) ?? 0.0;
+        } else if (type == 'bool') {
+          deserializedValue = valueString.toLowerCase() == 'true';
+        } else {
+          deserializedValue = valueString;
+        }
       } else {
         deserializedValue = json.decode(valueString);
       }
@@ -292,7 +346,7 @@ class CacheManager {
 
       return null;
     } catch (e) {
-      print('Error al recuperar de caché expirada: $e');
+      print('❌ Error al recuperar de caché expirada: $e');
       return null;
     }
   }
@@ -315,7 +369,7 @@ class CacheManager {
       }
 
       // Verificar si ha expirado
-      final expireTime = _prefs.getInt('$_expireKeyPrefix$key');
+      final expireTime = _prefs!.getInt('$_expireKeyPrefix$key');
       if (expireTime == null ||
           expireTime < DateTime.now().millisecondsSinceEpoch) {
         // Caché expirada o inexistente
@@ -323,10 +377,39 @@ class CacheManager {
       }
 
       // Verificar si existe el valor en persistencia
-      return _prefs.containsKey('$_cacheKeyPrefix$key');
+      return _prefs!.containsKey('$_cacheKeyPrefix$key');
     } catch (e) {
-      print('Error al verificar existencia en caché: $e');
+      print('❌ Error al verificar existencia en caché: $e');
       return false;
+    }
+  }
+
+  /// Obtiene información de depuración sobre el caché
+  Future<Map<String, dynamic>> getDebugInfo() async {
+    if (!_isInitialized()) {
+      await init();
+    }
+
+    try {
+      final cacheKeys = _prefs!
+          .getKeys()
+          .where((key) => key.startsWith(_cacheKeyPrefix))
+          .toList();
+
+      final expireKeys = _prefs!
+          .getKeys()
+          .where((key) => key.startsWith(_expireKeyPrefix))
+          .toList();
+
+      return {
+        'totalCacheEntries': cacheKeys.length,
+        'totalExpireEntries': expireKeys.length,
+        'memoryEntries': _memoryCache.length,
+        'cacheKeys':
+            cacheKeys.map((k) => k.substring(_cacheKeyPrefix.length)).toList(),
+      };
+    } catch (e) {
+      return {'error': e.toString()};
     }
   }
 }
