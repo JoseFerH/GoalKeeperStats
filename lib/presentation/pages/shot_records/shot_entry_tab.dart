@@ -1,3 +1,6 @@
+// lib/presentation/pages/shot_records/shot_entry_tab.dart
+// CORREGIDO: Con debugging mejorado para límites diarios
+
 import 'package:flutter/material.dart';
 import 'package:goalkeeper_stats/data/models/match_model.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
@@ -11,18 +14,18 @@ import 'package:goalkeeper_stats/presentation/pages/goalkeeper_passes/goalkeeper
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
-import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Importación del servicio de límites
+import 'package:goalkeeper_stats/services/daily_limits_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 class ShotEntryTab extends StatefulWidget {
   final UserModel user;
   final MatchesRepository matchesRepository;
   final ShotsRepository shotsRepository;
   final GoalkeeperPassesRepository passesRepository;
-  final String? preSelectedMatchId; // Parámetro para preseleccionar partido
-  final Function? onDataRegistered; // Callback para notificar registros
-
-  final bool isConnected; // <-- Añadir parámetro
+  final String? preSelectedMatchId;
+  final Function? onDataRegistered;
+  final bool isConnected;
 
   const ShotEntryTab({
     Key? key,
@@ -30,8 +33,7 @@ class ShotEntryTab extends StatefulWidget {
     required this.matchesRepository,
     required this.shotsRepository,
     required this.passesRepository,
-    required this.isConnected, // <-- Incluir en el constructor
-
+    required this.isConnected,
     this.preSelectedMatchId,
     this.onDataRegistered,
   }) : super(key: key);
@@ -42,34 +44,39 @@ class ShotEntryTab extends StatefulWidget {
 
 class _ShotEntryTabState extends State<ShotEntryTab> {
   bool _isLoading = false;
-  MatchModel? _preSelectedMatch; // Para almacenar el partido preseleccionado
+  MatchModel? _preSelectedMatch;
   bool _isConnected = true;
   final CacheManager _cacheManager = CacheManager();
   final ConnectivityService _connectivityService = ConnectivityService();
   final FirebaseCrashlyticsService _crashlyticsService =
       FirebaseCrashlyticsService();
 
-  // NUEVO: Usar servicio centralizado de límites
+  // Servicio centralizado de límites
   late final DailyLimitsService _dailyLimitsService;
-  DailyLimitInfo? _limitInfo; // NUEVO: Información del límite
+  DailyLimitInfo? _limitInfo;
   bool _isLoadingLimit = false;
 
   @override
   void initState() {
     super.initState();
 
-    // NUEVO: Inicializar servicio de límites
+    // Inicializar servicio de límites
     _dailyLimitsService = DailyLimitsService(
       cacheManager: _cacheManager,
       crashlyticsService: _crashlyticsService,
     );
 
     _setupConnectivity();
-    _checkFreeTierLimits(); // CORREGIDO: Usar nuevo método
+    _checkFreeTierLimits();
 
     // Si hay un ID de partido preseleccionado, cargarlo
     if (widget.preSelectedMatchId != null) {
       _loadPreSelectedMatch();
+    }
+
+    // DEBUG: En modo debug, mostrar información de Firestore
+    if (kDebugMode && !widget.user.subscription.isPremium) {
+      _debugFirestoreData();
     }
   }
 
@@ -99,20 +106,31 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     });
   }
 
-  // CORREGIDO: Nuevo método usando servicio centralizado
+  // CORREGIDO: Método mejorado con debugging
   Future<void> _checkFreeTierLimits() async {
+    if (widget.user.subscription.isPremium) {
+      debugPrint('✅ Usuario premium - saltando verificación de límites');
+      return;
+    }
+
     setState(() {
       _isLoadingLimit = true;
     });
 
     try {
+      debugPrint('🔍 Verificando límites para usuario: ${widget.user.id}');
+
       final limitInfo = await _dailyLimitsService.getLimitInfo(widget.user);
+
+      debugPrint('📊 Información de límites obtenida: $limitInfo');
 
       setState(() {
         _limitInfo = limitInfo;
         _isLoadingLimit = false;
       });
     } catch (e) {
+      debugPrint('❌ Error al verificar límites: $e');
+
       _crashlyticsService.recordError(
         e,
         StackTrace.current,
@@ -123,13 +141,27 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
         _isLoadingLimit = false;
         // En caso de error, asumir límite alcanzado para usuarios gratuitos
         _limitInfo = DailyLimitInfo(
-          isPremium: widget.user.subscription.isPremium,
-          dailyLimit: widget.user.subscription.isPremium ? -1 : 20,
-          todayCount: widget.user.subscription.isPremium ? 0 : 20,
-          hasReachedLimit: !widget.user.subscription.isPremium,
-          remainingShots: widget.user.subscription.isPremium ? -1 : 0,
+          isPremium: false,
+          dailyLimit: 20,
+          todayCount: 20,
+          hasReachedLimit: true,
+          remainingShots: 0,
         );
       });
+    }
+  }
+
+  // NUEVO: Método para debug de datos en Firestore
+  Future<void> _debugFirestoreData() async {
+    try {
+      debugPrint('🚀 INICIANDO DEBUG DE FIRESTORE...');
+      final debugInfo =
+          await _dailyLimitsService.debugFirestoreData(widget.user.id);
+
+      debugPrint('🔍 INFORMACIÓN COMPLETA DE DEBUG:');
+      debugPrint('${debugInfo.toString()}');
+    } catch (e) {
+      debugPrint('❌ Error en debug de Firestore: $e');
     }
   }
 
@@ -203,7 +235,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     }
   }
 
-  // CORREGIDO: Método _navigateToShotForm usando servicio centralizado
+  // CORREGIDO: Método con invalidación de caché mejorada
   void _navigateToShotForm(MatchModel match) async {
     final result = await Navigator.push(
       context,
@@ -217,12 +249,13 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       ),
     );
 
-    // CORREGIDO: Si se regresa con éxito, actualizar límites
+    // Si se regresa con éxito, actualizar límites
     if (result == true) {
       widget.onDataRegistered?.call();
 
       // Invalidar caché de límites para usuarios gratuitos
       if (!widget.user.subscription.isPremium) {
+        debugPrint('🔄 Invalidando caché después del registro exitoso...');
         await _dailyLimitsService.invalidateTodayCache(widget.user.id);
         _checkFreeTierLimits(); // Recargar información de límites
       }
@@ -241,6 +274,13 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
               onPressed: () =>
                   _connectivityService.showConnectivitySnackBar(context),
               tooltip: 'Sin conexión',
+            ),
+          // NUEVO: Botón de debug en modo desarrollo
+          if (kDebugMode && !widget.user.subscription.isPremium)
+            IconButton(
+              icon: const Icon(Icons.bug_report),
+              onPressed: _debugFirestoreData,
+              tooltip: 'Debug Firestore',
             ),
         ],
       ),
@@ -261,7 +301,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     );
   }
 
-  // CORREGIDO: Método _buildContent usando la nueva información de límites
+  // CORREGIDO: Contenido con información de debug mejorada
   Widget _buildContent() {
     final isPremium = widget.user.subscription.isPremium;
     final hasReachedLimit = _limitInfo?.hasReachedLimit ?? false;
@@ -295,47 +335,108 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                 ),
               ),
 
-            // CORREGIDO: Límite de tiros usando nueva información
-            if (!isPremium && _limitInfo != null)
+            // CORREGIDO: Card de límites con información detallada
+            if (!isPremium)
               Container(
                 padding: const EdgeInsets.all(12),
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: hasReachedLimit
-                      ? Colors.red.shade50
-                      : Colors.green.shade50,
+                  color: _isLoadingLimit
+                      ? Colors.blue.shade50
+                      : hasReachedLimit
+                          ? Colors.red.shade50
+                          : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: hasReachedLimit
-                          ? Colors.red.shade200
-                          : Colors.green.shade200),
+                    color: _isLoadingLimit
+                        ? Colors.blue.shade200
+                        : hasReachedLimit
+                            ? Colors.red.shade200
+                            : Colors.green.shade200,
+                  ),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    Icon(
-                      hasReachedLimit
-                          ? Icons.error_outline
-                          : Icons.check_circle,
-                      color: hasReachedLimit ? Colors.red : Colors.green,
+                    Row(
+                      children: [
+                        Icon(
+                          _isLoadingLimit
+                              ? Icons.hourglass_empty
+                              : hasReachedLimit
+                                  ? Icons.error_outline
+                                  : Icons.check_circle,
+                          color: _isLoadingLimit
+                              ? Colors.blue
+                              : hasReachedLimit
+                                  ? Colors.red
+                                  : Colors.green,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _isLoadingLimit
+                              ? const Text("Verificando límites diarios...")
+                              : Text(
+                                  _limitInfo?.displayMessage ??
+                                      'Información no disponible',
+                                  style: TextStyle(
+                                    color: hasReachedLimit
+                                        ? Colors.red.shade700
+                                        : Colors.green.shade700,
+                                  ),
+                                ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _isLoadingLimit
-                          ? const Text("Verificando límites diarios...")
-                          : Text(
-                              _limitInfo!.displayMessage,
-                              style: TextStyle(
-                                color: hasReachedLimit
-                                    ? Colors.red.shade700
-                                    : Colors.green.shade700,
+                    // NUEVO: Información detallada en modo debug
+                    if (kDebugMode && _limitInfo != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'DEBUG INFO:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
                               ),
-                            ),
-                    ),
+                              Text(
+                                'Límite: ${_limitInfo!.dailyLimit}',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade700),
+                              ),
+                              Text(
+                                'Hoy: ${_limitInfo!.todayCount}',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade700),
+                              ),
+                              Text(
+                                'Restantes: ${_limitInfo!.remainingShots}',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade700),
+                              ),
+                              Text(
+                                'Límite alcanzado: ${_limitInfo!.hasReachedLimit}',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
 
-            // Tarjeta de registro de tiros (CORREGIDO: usar hasReachedLimit de limitInfo)
+            // Tarjeta de registro de tiros
             _buildActionCard(
               title: 'Registrar Tiro',
               icon: Icons.sports_soccer,
@@ -357,8 +458,12 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
               color: Colors.purple,
               description:
                   'Registra un saque realizado con su tipo y resultado.',
-              onTap: !_isConnected ? null : _startPassRegistration,
-              disabled: !_isConnected,
+              onTap: !isPremium && hasReachedLimit
+                  ? _showLimitReachedDialog
+                  : !_isConnected
+                      ? null
+                      : _startPassRegistration,
+              disabled: !_isConnected || (!isPremium && hasReachedLimit),
             ),
 
             if (isPremium) ...[
@@ -406,7 +511,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Con Premium podrás registrar tiros ilimitados, organizar por partidos y acceder a todas las estadísticas avanzadas.',
+                        'Con Premium podrás registrar tiros y saques ilimitados, organizar por partidos y acceder a todas las estadísticas avanzadas.',
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton(
@@ -502,8 +607,8 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       builder: (context) => AlertDialog(
         title: const Text('Límite diario alcanzado'),
         content: Text(_limitInfo?.displayMessage ??
-            'Has alcanzado el límite de 20 tiros diarios para usuarios gratuitos. '
-                'Actualiza a Premium para registrar tiros ilimitados y tener acceso '
+            'Has alcanzado el límite de 20 registros diarios para usuarios gratuitos. '
+                'Actualiza a Premium para registrar tiros y saques ilimitados y tener acceso '
                 'a todas las funciones.'),
         actions: [
           TextButton(
@@ -534,6 +639,15 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     if (!_isConnected) {
       _connectivityService.showConnectivitySnackBar(context);
       return;
+    }
+
+    // CORREGIDO: Verificar límite usando servicio centralizado
+    if (!isPremium) {
+      final canCreate = await _dailyLimitsService.canCreatePass(widget.user);
+      if (!canCreate) {
+        _showLimitReachedDialog();
+        return;
+      }
     }
 
     setState(() {
@@ -573,6 +687,9 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
             // Si se regresa con un resultado exitoso, notificar
             if (passResult == true) {
               widget.onDataRegistered?.call();
+              // CORREGIDO: Invalidar caché después del registro
+              await _dailyLimitsService.invalidateTodayCache(widget.user.id);
+              _checkFreeTierLimits();
             }
           }
         }
@@ -595,6 +712,9 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
           // Si se regresa con un resultado exitoso, notificar
           if (passResult == true) {
             widget.onDataRegistered?.call();
+            // CORREGIDO: Invalidar caché después del registro
+            await _dailyLimitsService.invalidateTodayCache(widget.user.id);
+            _checkFreeTierLimits();
           }
         }
       }
@@ -622,7 +742,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     }
   }
 
-  // CORREGIDO: Método _startShotRegistration usando servicio centralizado
+  // CORREGIDO: Método con verificación de límites mejorada
   void _startShotRegistration() async {
     final isPremium = widget.user.subscription.isPremium;
 
@@ -735,7 +855,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
           builder: (context) => MatchFormPage(
             userId: widget.user.id,
             matchesRepository: widget.matchesRepository,
-            user: widget.user, // Añadir este parámetro obligatorio
+            user: widget.user,
           ),
         ),
       );

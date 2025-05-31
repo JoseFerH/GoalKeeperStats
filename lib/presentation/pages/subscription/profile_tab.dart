@@ -4,10 +4,13 @@ import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/pages/subscription/subscription_page.dart';
+import 'package:goalkeeper_stats/presentation/pages/auth/edit_profile_page.dart';
 import 'package:goalkeeper_stats/services/purchase_service.dart';
 import 'package:goalkeeper_stats/presentation/widgets/purchase_status_widget.dart';
+import 'package:goalkeeper_stats/core/theme/theme_manager.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProfileTab extends StatefulWidget {
   final UserModel user;
@@ -31,13 +34,24 @@ class _ProfileTabState extends State<ProfileTab> {
   late PurchaseService _purchaseService;
   PurchaseInfo? _lastPurchaseInfo;
   bool _isCheckingSubscription = false;
+  late ThemeManager _themeManager;
+  bool _notificationsEnabled = true;
+  String _selectedLanguage = 'es';
 
   @override
   void initState() {
     super.initState();
     _purchaseService = Provider.of<PurchaseService>(context, listen: false);
+    _themeManager = ThemeManager.getInstance();
+    _loadUserSettings();
     _listenToPurchases();
     _checkCurrentSubscription();
+  }
+
+  void _loadUserSettings() {
+    // Cargar configuraciones del usuario desde UserModel o SharedPreferences
+    _notificationsEnabled = widget.user.settings?.notificationsEnabled ?? true;
+    _selectedLanguage = widget.user.settings?.language ?? 'es';
   }
 
   void _listenToPurchases() {
@@ -47,7 +61,6 @@ class _ProfileTabState extends State<ProfileTab> {
           _lastPurchaseInfo = purchaseInfo;
         });
 
-        // Si la compra fue exitosa, actualizar el usuario
         if (purchaseInfo.status == PurchaseStatus.purchased ||
             purchaseInfo.status == PurchaseStatus.restored) {
           _refreshUserData();
@@ -64,11 +77,9 @@ class _ProfileTabState extends State<ProfileTab> {
     });
 
     try {
-      // Verificar el estado actual de la suscripción
       final subscription =
           await _purchaseService.verifyCurrentSubscription(widget.user.id);
 
-      // Si cambió el estado de suscripción, actualizar
       if (subscription.isPremium != widget.user.subscription.isPremium) {
         _refreshUserData();
       }
@@ -85,7 +96,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Future<void> _refreshUserData() async {
     try {
-      // Disparar evento para actualizar el usuario
       widget.authBloc.add(RefreshUserDataEvent() as AuthEvent);
     } catch (e) {
       debugPrint('Error actualizando datos del usuario: $e');
@@ -96,7 +106,7 @@ class _ProfileTabState extends State<ProfileTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Perfil'),
+        title: const Text('Perfil y Configuración'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -140,8 +150,16 @@ class _ProfileTabState extends State<ProfileTab> {
                   ],
                 ),
 
-              // Opciones de perfil
-              _buildProfileOptions(),
+              // Configuración de la aplicación
+              _buildAppSettingsCard(),
+              const SizedBox(height: 20),
+
+              // Opciones de cuenta
+              _buildAccountOptionsCard(),
+              const SizedBox(height: 20),
+
+              // Información y soporte
+              _buildSupportCard(),
               const SizedBox(height: 20),
 
               // Estado de conectividad
@@ -161,49 +179,66 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
+        child: Column(
           children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundImage: widget.user.photoUrl != null
-                  ? NetworkImage(widget.user.photoUrl!)
-                  : null,
-              child: widget.user.photoUrl == null
-                  ? const Icon(Icons.person, size: 40)
-                  : null,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.user.name,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.user.email,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  if (widget.user.team != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Equipo: ${widget.user.team}',
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundImage: widget.user.photoUrl != null
+                      ? NetworkImage(widget.user.photoUrl!)
+                      : null,
+                  child: widget.user.photoUrl == null
+                      ? const Icon(Icons.person, size: 40)
+                      : null,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.user.name,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.user.email,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
                         ),
                       ),
-                    ),
-                ],
+                      if (widget.user.team != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Equipo: ${widget.user.team}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _navigateToEditProfile,
+                icon: const Icon(Icons.edit),
+                label: const Text('Editar Perfil'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                ),
               ),
             ),
           ],
@@ -320,6 +355,15 @@ class _ProfileTabState extends State<ProfileTab> {
                   ],
                 ],
               ),
+              if (isPremium)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: TextButton.icon(
+                    onPressed: widget.isConnected ? _restorePurchases : null,
+                    icon: const Icon(Icons.restore),
+                    label: const Text('Restaurar Compras'),
+                  ),
+                ),
               if (!widget.isConnected)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -338,7 +382,98 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildProfileOptions() {
+  Widget _buildAppSettingsCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Configuración de la App',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Tema oscuro/claro
+            ListTile(
+              leading: Icon(
+                _themeManager.darkMode ? Icons.dark_mode : Icons.light_mode,
+              ),
+              title: const Text('Tema Oscuro'),
+              subtitle:
+                  Text(_themeManager.darkMode ? 'Activado' : 'Desactivado'),
+              trailing: Switch(
+                value: _themeManager.darkMode,
+                onChanged: (value) {
+                  setState(() {
+                    _themeManager.setDarkMode(value);
+                  });
+                },
+              ),
+            ),
+
+            const Divider(),
+
+            // Notificaciones
+            ListTile(
+              leading: Icon(
+                _notificationsEnabled
+                    ? Icons.notifications
+                    : Icons.notifications_off,
+              ),
+              title: const Text('Notificaciones'),
+              subtitle:
+                  Text(_notificationsEnabled ? 'Activadas' : 'Desactivadas'),
+              trailing: Switch(
+                value: _notificationsEnabled,
+                onChanged: (value) {
+                  setState(() {
+                    _notificationsEnabled = value;
+                    _updateUserSettings();
+                  });
+                },
+              ),
+            ),
+
+            const Divider(),
+
+            // Idioma
+            ListTile(
+              leading: const Icon(Icons.language),
+              title: const Text('Idioma'),
+              subtitle: Text(_selectedLanguage == 'es' ? 'Español' : 'English'),
+              trailing: DropdownButton<String>(
+                value: _selectedLanguage,
+                underline: Container(),
+                items: const [
+                  DropdownMenuItem(value: 'es', child: Text('Español')),
+                  DropdownMenuItem(value: 'en', child: Text('English')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedLanguage = value;
+                      _updateUserSettings();
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountOptionsCard() {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -350,7 +485,7 @@ class _ProfileTabState extends State<ProfileTab> {
           const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(
-              'Opciones',
+              'Cuenta',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -358,35 +493,18 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text('Editar Perfil'),
+            leading: const Icon(Icons.backup),
+            title: const Text('Exportar Datos'),
+            subtitle: const Text('Exportar estadísticas a Google Sheets'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // TODO: Navegar a editar perfil
-            },
-          ),
-          if (widget.user.subscription.isPremium)
-            ListTile(
-              leading: const Icon(Icons.restore),
-              title: const Text('Restaurar Compras'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: widget.isConnected ? _restorePurchases : null,
-            ),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Configuración'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // TODO: Navegar a configuración
-            },
+            onTap: widget.isConnected ? _exportData : null,
           ),
           ListTile(
-            leading: const Icon(Icons.help_outline),
-            title: const Text('Ayuda y Soporte'),
+            leading: const Icon(Icons.privacy_tip),
+            title: const Text('Privacidad'),
+            subtitle: const Text('Política de privacidad y términos'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // TODO: Navegar a ayuda
-            },
+            onTap: _showPrivacyPolicy,
           ),
           const Divider(),
           ListTile(
@@ -396,6 +514,49 @@ class _ProfileTabState extends State<ProfileTab> {
               style: TextStyle(color: Colors.red),
             ),
             onTap: _signOut,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupportCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Ayuda y Soporte',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('Preguntas Frecuentes'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _showFAQ,
+          ),
+          ListTile(
+            leading: const Icon(Icons.email),
+            title: const Text('Contactar Soporte'),
+            subtitle: const Text('¿Tienes algún problema?'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _contactSupport,
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Acerca de la App'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _showAbout,
           ),
         ],
       ),
@@ -438,6 +599,19 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
+  // Métodos de navegación y acciones
+  Future<void> _navigateToEditProfile() async {
+    final updatedUser = await Navigator.of(context).push<UserModel>(
+      MaterialPageRoute(
+        builder: (context) => EditProfilePage(user: widget.user),
+      ),
+    );
+
+    if (updatedUser != null) {
+      widget.onUserUpdated(updatedUser);
+    }
+  }
+
   Future<void> _navigateToSubscription() async {
     if (!widget.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -455,7 +629,6 @@ class _ProfileTabState extends State<ProfileTab> {
       ),
     );
 
-    // Si hubo cambios, actualizar datos
     if (result == true) {
       _refreshUserData();
     }
@@ -489,6 +662,147 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
       );
     }
+  }
+
+  void _updateUserSettings() {
+    // Aquí actualizarías las configuraciones del usuario
+    // En una implementación real, esto se enviaría al servidor
+    // Por ahora solo lo manejamos localmente
+  }
+
+  void _exportData() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Exportar Datos'),
+          content: const Text(
+            'Esta función permitirá exportar tus estadísticas a Google Sheets.\n\n'
+            'Próximamente disponible.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showPrivacyPolicy() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Privacidad y Términos'),
+          content: const SingleChildScrollView(
+            child: Text(
+              'Política de Privacidad\n\n'
+              'Tu privacidad es importante para nosotros. Esta aplicación:\n\n'
+              '• Solo recopila datos necesarios para su funcionamiento\n'
+              '• No comparte información personal con terceros\n'
+              '• Utiliza Firebase para almacenamiento seguro\n'
+              '• Cumple con las regulaciones de protección de datos\n\n'
+              'Para más información, visita nuestro sitio web.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showFAQ() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Preguntas Frecuentes'),
+          content: const SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '¿Cómo registro un tiro?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                    'Ve a la pestaña "Registrar" y toca en la portería donde fue el tiro.\n'),
+                Text(
+                  '¿Qué incluye la versión Premium?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                    'Tiros ilimitados, partidos, estadísticas avanzadas y exportación de datos.\n'),
+                Text(
+                  '¿Puedo usar la app sin internet?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                    'Sí, pero con funcionalidad limitada. Los datos se sincronizarán cuando tengas conexión.\n'),
+                Text(
+                  '¿Cómo cancelo mi suscripción?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                    'Desde la configuración de tu tienda (Google Play o App Store).'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _contactSupport() async {
+    const email = 'soporte@goalkeeperStats.com';
+    const subject = 'Soporte - Goalkeeper Stats App';
+    const body = 'Hola, necesito ayuda con...';
+
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: email,
+      query: 'subject=$subject&body=$body',
+    );
+
+    try {
+      await launchUrl(emailUri);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el cliente de email'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'Goalkeeper Stats',
+      applicationVersion: '1.0.0',
+      applicationIcon: const Icon(Icons.sports_soccer, size: 48),
+      children: const [
+        Text(
+          'Una aplicación diseñada específicamente para porteros de fútbol que quieren mejorar su rendimiento mediante el análisis detallado de estadísticas.',
+        ),
+      ],
+    );
   }
 
   void _signOut() {

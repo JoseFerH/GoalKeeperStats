@@ -41,9 +41,9 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     appId: '1:123456789012:web:abcdef1234567890abcdef',
     messagingSenderId: '123456789012',
-    projectId: 'goalkeeper-stats-app',
-    authDomain: 'goalkeeper-stats-app.firebaseapp.com',
-    storageBucket: 'goalkeeper-stats-app.appspot.com',
+    projectId: 'goalie-stats-app',
+    authDomain: 'goalie-stats-app.firebaseapp.com',
+    storageBucket: 'goalie-stats-app.appspot.com',
     measurementId: 'G-XXXXXXXXXX',
   );
 
@@ -63,5 +63,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'goalie-stats-app.firebasestorage.app',
     iosBundleId: 'com.example.goalkeeperStats',
   );
-
 }

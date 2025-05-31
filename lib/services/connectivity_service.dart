@@ -48,9 +48,8 @@ class ConnectivityService {
         _lastResult = result;
         _connectivityController.add(result);
 
-        // Registrar cambio en Crashlytics para contexto
-        FirebaseCrashlytics.instance
-            .setCustomKey('network_connectivity', result.toString());
+        // 🔧 CORREGIDO: Registrar cambio en Crashlytics con valor string
+        _recordConnectivityChange(result);
       });
 
       _isInitialized = true;
@@ -58,6 +57,26 @@ class ConnectivityService {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
           reason: 'Error al inicializar ConnectivityService');
       debugPrint('Error al inicializar ConnectivityService: $e');
+    }
+  }
+
+  /// 🔧 NUEVO: Método para registrar cambios de conectividad de forma segura
+  void _recordConnectivityChange(ConnectivityResult result) {
+    try {
+      // Registrar en Crashlytics con string en lugar de boolean
+      FirebaseCrashlytics.instance.setCustomKey('network_connectivity',
+          result.toString() // 🔧 Usar toString() en lugar del enum directo
+          );
+
+      // También registrar si está conectado como string
+      FirebaseCrashlytics.instance.setCustomKey('is_connected',
+          isConnected.toString() // 🔧 Convertir boolean a string
+          );
+
+      debugPrint(
+          '📶 Conectividad cambió a: ${result.toString()} (conectado: $isConnected)');
+    } catch (e) {
+      debugPrint('❌ Error registrando cambio de conectividad: $e');
     }
   }
 
@@ -91,13 +110,46 @@ class ConnectivityService {
         content: Text(message),
         backgroundColor: backgroundColor,
         duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
+  /// 🔧 NUEVO: Método para obtener información detallada de conectividad
+  Map<String, String> getConnectivityInfo() {
+    return {
+      'status': _lastResult.toString(),
+      'is_connected': isConnected.toString(),
+      'is_initialized': _isInitialized.toString(),
+    };
+  }
+
+  /// 🔧 NUEVO: Método para verificar conectividad con timeout
+  Future<bool> checkConnectivityWithTimeout({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    try {
+      final result = await _connectivity.checkConnectivity().timeout(timeout);
+      _lastResult = result;
+
+      // Registrar el resultado
+      _recordConnectivityChange(result);
+
+      return isConnected;
+    } catch (e) {
+      debugPrint('❌ Error verificando conectividad con timeout: $e');
+      return false;
+    }
+  }
+
   /// Liberar recursos
   void dispose() {
-    _subscription.cancel();
-    _connectivityController.close();
+    try {
+      _subscription.cancel();
+      _connectivityController.close();
+      debugPrint('🗑️ ConnectivityService disposed');
+    } catch (e) {
+      debugPrint('❌ Error disposing ConnectivityService: $e');
+    }
   }
 }

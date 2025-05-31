@@ -225,7 +225,7 @@ class _FieldSelectorState extends State<FieldSelector> {
               width: width,
               height: height,
               decoration: BoxDecoration(
-                color: Colors.green.shade600,
+                color: Colors.blue.shade600,
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: [
                   BoxShadow(
@@ -390,8 +390,8 @@ class _FieldSelectorState extends State<FieldSelector> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.green.shade800,
-                    Colors.green.shade600,
+                    Colors.blue.shade800,
+                    Colors.blue.shade600,
                   ],
                 ),
                 // Semicírculo para el área

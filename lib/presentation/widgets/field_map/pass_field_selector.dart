@@ -23,7 +23,7 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
   // Relación de aspecto de un campo de fútbol (largo/ancho)
   // Usando 0.7 para aprovechar mejor el espacio vertical
   final double _aspectRatio = 0.7;
-  
+
   // Key para obtener el tamaño y posición del campo
   final GlobalKey _fieldKey = GlobalKey();
 
@@ -53,7 +53,7 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
               width: width,
               height: height,
               decoration: BoxDecoration(
-                color: Colors.green.shade600,
+                color: Colors.blue.shade600,
                 border: Border.all(
                   color: Colors.white,
                   width: 2,
@@ -279,7 +279,8 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
 
   // Manejador para toques en el campo
   void _handleTap(Offset globalPosition) {
-    final RenderBox? fieldBox = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? fieldBox =
+        _fieldKey.currentContext?.findRenderObject() as RenderBox?;
     if (fieldBox == null) return;
 
     final localPosition = fieldBox.globalToLocal(globalPosition);
@@ -291,7 +292,6 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
         localPosition.dx <= width &&
         localPosition.dy >= 0 &&
         localPosition.dy <= height) {
-      
       // Calcular posición normalizada
       final normalizedX = localPosition.dx / width;
       final normalizedY = localPosition.dy / height;
@@ -317,7 +317,8 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
 
   // Manejador para final de arrastre
   void _handleDragEnd(Offset globalPosition) {
-    final RenderBox? fieldBox = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? fieldBox =
+        _fieldKey.currentContext?.findRenderObject() as RenderBox?;
     if (fieldBox == null) return;
 
     final localPosition = fieldBox.globalToLocal(globalPosition);
@@ -329,7 +330,6 @@ class _PassFieldSelectorState extends State<PassFieldSelector> {
         localPosition.dx <= width &&
         localPosition.dy >= 0 &&
         localPosition.dy <= height) {
-      
       // Calcular posición normalizada
       final normalizedX = localPosition.dx / width;
       final normalizedY = localPosition.dy / height;
@@ -496,22 +496,22 @@ class FieldPainter extends CustomPainter {
       3,
       paint..style = PaintingStyle.fill,
     );
-    
+
     // Líneas verticales para dividir en 3 columnas (sutiles)
     paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0
       ..color = Colors.white.withOpacity(0.3);
-      
+
     final columnWidth = width / 3;
-    
+
     // Primera línea vertical (1/3)
     canvas.drawLine(
       Offset(columnWidth, 0),
       Offset(columnWidth, height),
       paint,
     );
-    
+
     // Segunda línea vertical (2/3)
     canvas.drawLine(
       Offset(columnWidth * 2, 0),
