@@ -10,8 +10,8 @@ import 'package:goalkeeper_stats/core/constants/app_constants.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:connectivity_plus/connectivity_plus.dart'; // <-- Añadir esta línea
+import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Servicio de límites
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ShotFormPage extends StatefulWidget {
   final UserModel user;
@@ -49,13 +49,15 @@ class _ShotFormPageState extends State<ShotFormPage> {
   bool _isGoal = false;
   bool _isConnected = true;
 
-  // Servicios Firebase
+  // Servicios
   final CacheManager _cacheManager = CacheManager();
   final ConnectivityService _connectivityService = ConnectivityService();
-  final FirebaseCrashlyticsService _crashlyticsService = FirebaseCrashlyticsService();
-  
-  // Verificación de límites para usuarios gratuitos
-  int _todayShotsCount = 0;
+  final FirebaseCrashlyticsService _crashlyticsService =
+      FirebaseCrashlyticsService();
+
+  // NUEVO: Usar servicio centralizado de límites
+  late final DailyLimitsService _dailyLimitsService;
+  DailyLimitInfo? _limitInfo; // NUEVO: Información del límite
   bool _isCheckingLimits = false;
 
   // Controladores
@@ -65,9 +67,16 @@ class _ShotFormPageState extends State<ShotFormPage> {
   @override
   void initState() {
     super.initState();
+
+    // NUEVO: Inicializar servicio de límites
+    _dailyLimitsService = DailyLimitsService(
+      cacheManager: _cacheManager,
+      crashlyticsService: _crashlyticsService,
+    );
+
     _setupConnectivity();
     if (!widget.user.subscription.isPremium) {
-      _checkFreeTierLimits();
+      _checkFreeTierLimits(); // CORREGIDO: Usar nuevo método
     }
   }
 
@@ -77,101 +86,85 @@ class _ShotFormPageState extends State<ShotFormPage> {
     _notesController.dispose();
     super.dispose();
   }
-  
+
   void _setupConnectivity() {
     _connectivityService.onConnectivityChanged.listen((result) {
       setState(() {
-        _isConnected = result == ConnectivityResult.wifi || 
-                     result == ConnectivityResult.mobile ||
-                     result == ConnectivityResult.ethernet;
+        _isConnected = result == ConnectivityResult.wifi ||
+            result == ConnectivityResult.mobile ||
+            result == ConnectivityResult.ethernet;
       });
-      
+
       if (!_isConnected && mounted) {
         _connectivityService.showConnectivitySnackBar(context);
       }
     });
-    
+
     _connectivityService.checkConnectivity().then((connected) {
       setState(() {
         _isConnected = connected;
       });
     });
   }
-  
+
+  // CORREGIDO: Nuevo método usando servicio centralizado
   Future<void> _checkFreeTierLimits() async {
     if (widget.user.subscription.isPremium) {
       return;
     }
-    
+
     setState(() {
       _isCheckingLimits = true;
     });
-    
+
     try {
-      // Verificar caché primero
-      final cachedCount = await _cacheManager.get<int>('todayShotsCount_${widget.user.id}');
-      if (cachedCount != null) {
-        setState(() {
-          _todayShotsCount = cachedCount;
-          _isCheckingLimits = false;
-        });
-        
-        if (_todayShotsCount >= 20) {
-          _showLimitReachedDialog();
-        }
-        return;
-      }
-      
-      // Obtener conteo desde Firestore con timeframe preciso
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-      
-      final shotsSnapshot = await FirebaseFirestore.instance
-          .collection('shots')
-          .where('userId', isEqualTo: widget.user.id)
-          .where('timestamp', isGreaterThanOrEqualTo: startOfDay)
-          .where('timestamp', isLessThanOrEqualTo: endOfDay)
-          .get();
-      
-      final count = shotsSnapshot.docs.length;
-      
-      // Guardar en caché por 5 minutos
-      await _cacheManager.set<int>('todayShotsCount_${widget.user.id}', count, duration: 300);
-      
+      final limitInfo = await _dailyLimitsService.getLimitInfo(widget.user);
+
       setState(() {
-        _todayShotsCount = count;
+        _limitInfo = limitInfo;
         _isCheckingLimits = false;
       });
-      
-      if (_todayShotsCount >= 20) {
+
+      // Si ya alcanzó el límite, mostrar diálogo
+      if (limitInfo.hasReachedLimit) {
         _showLimitReachedDialog();
       }
     } catch (e) {
       _crashlyticsService.recordError(
-        e, 
+        e,
         StackTrace.current,
         reason: 'Error al verificar límite de tiros diarios en formulario',
       );
+
       setState(() {
         _isCheckingLimits = false;
+        // En caso de error, asumir límite alcanzado para usuarios gratuitos
+        _limitInfo = DailyLimitInfo(
+          isPremium: false,
+          dailyLimit: 20,
+          todayCount: 20,
+          hasReachedLimit: true,
+          remainingShots: 0,
+        );
       });
+
+      // Mostrar diálogo de límite alcanzado
+      _showLimitReachedDialog();
     }
   }
 
   void _showLimitReachedDialog() {
     if (!mounted) return;
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('Límite diario alcanzado'),
-        content: const Text(
-          'Has alcanzado el límite de 20 tiros diarios para usuarios gratuitos. '
-          'Actualiza a Premium para registrar tiros ilimitados y tener acceso '
-          'a todas las funciones.'
-        ),
+        content: Text(_limitInfo?.displayMessage ??
+            'Has alcanzado el límite de 20 tiros diarios para usuarios gratuitos. '
+                'Actualiza a Premium para registrar tiros ilimitados y tener acceso '
+                'a todas las funciones.'),
         actions: [
           TextButton(
             onPressed: () {
@@ -205,7 +198,8 @@ class _ShotFormPageState extends State<ShotFormPage> {
           if (!_isConnected)
             IconButton(
               icon: const Icon(Icons.wifi_off),
-              onPressed: () => _connectivityService.showConnectivitySnackBar(context),
+              onPressed: () =>
+                  _connectivityService.showConnectivitySnackBar(context),
               tooltip: 'Sin conexión',
             ),
           if (_currentStep > 0)
@@ -234,7 +228,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
         ),
       );
     }
-    
+
     // Advertencia de conectividad en la parte superior
     if (!_isConnected) {
       return Column(
@@ -263,7 +257,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
 
     return _buildStepContent();
   }
-  
+
   Widget _buildStepContent() {
     // Mostrar el paso actual del asistente
     switch (_currentStep) {
@@ -284,6 +278,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
     }
   }
 
+  // CORREGIDO: Método _buildInitialStep usando nueva información de límites
   Widget _buildInitialStep() {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final isPremium = widget.user.subscription.isPremium;
@@ -293,43 +288,39 @@ class _ShotFormPageState extends State<ShotFormPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Mostrar información de límites para usuarios gratuitos
-          if (!isPremium)
+          // CORREGIDO: Mostrar información de límites usando el servicio centralizado
+          if (!isPremium && _limitInfo != null)
             Container(
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: _todayShotsCount >= 20 
-                    ? Colors.red.shade50 
+                color: _limitInfo!.hasReachedLimit
+                    ? Colors.red.shade50
                     : Colors.green.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _todayShotsCount >= 20 
-                      ? Colors.red.shade200 
-                      : Colors.green.shade200
-                ),
+                    color: _limitInfo!.hasReachedLimit
+                        ? Colors.red.shade200
+                        : Colors.green.shade200),
               ),
               child: Row(
                 children: [
                   Icon(
-                    _todayShotsCount >= 20 
-                        ? Icons.error_outline 
+                    _limitInfo!.hasReachedLimit
+                        ? Icons.error_outline
                         : Icons.check_circle,
-                    color: _todayShotsCount >= 20 
-                        ? Colors.red 
-                        : Colors.green,
+                    color:
+                        _limitInfo!.hasReachedLimit ? Colors.red : Colors.green,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: _isCheckingLimits
                         ? const Text("Verificando límites diarios...")
                         : Text(
-                            _todayShotsCount >= 20
-                                ? 'Has alcanzado el límite de 20 tiros diarios.'
-                                : 'Tiros registrados hoy: $_todayShotsCount de 20',
+                            _limitInfo!.displayMessage,
                             style: TextStyle(
-                              color: _todayShotsCount >= 20 
-                                  ? Colors.red.shade700 
+                              color: _limitInfo!.hasReachedLimit
+                                  ? Colors.red.shade700
                                   : Colors.green.shade700,
                             ),
                           ),
@@ -337,7 +328,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
                 ],
               ),
             ),
-            
+
           // Tarjeta de explicación
           Card(
             child: Padding(
@@ -460,10 +451,11 @@ class _ShotFormPageState extends State<ShotFormPage> {
 
           const Spacer(),
 
-          // Botón para iniciar el proceso
+          // CORREGIDO: Botón para iniciar el proceso
           ElevatedButton(
-            onPressed: (!isPremium && _todayShotsCount >= 20) || !_isConnected
-                ? null  // Deshabilitar si se alcanzó el límite o no hay conexión
+            onPressed: (!isPremium && (_limitInfo?.hasReachedLimit ?? false)) ||
+                    !_isConnected
+                ? null // Deshabilitar si se alcanzó el límite o no hay conexión
                 : () {
                     setState(() {
                       _currentStep = 1;
@@ -473,7 +465,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
             child: Text(
-              !_isConnected 
+              !_isConnected
                   ? 'Se requiere conexión a internet'
                   : 'Comenzar a Registrar',
               style: const TextStyle(
@@ -482,9 +474,9 @@ class _ShotFormPageState extends State<ShotFormPage> {
               ),
             ),
           ),
-          
-          // Mensaje adicional para límite alcanzado
-          if (!isPremium && _todayShotsCount >= 20)
+
+          // CORREGIDO: Mensaje adicional para límite alcanzado
+          if (!isPremium && (_limitInfo?.hasReachedLimit ?? false))
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: TextButton(
@@ -1551,24 +1543,23 @@ class _ShotFormPageState extends State<ShotFormPage> {
     );
   }
 
+  // CORREGIDO: Método _saveShot usando servicio centralizado
   Future<void> _saveShot() async {
     // Verificar que hay conexión
     if (!_isConnected) {
       _connectivityService.showConnectivitySnackBar(context);
       return;
     }
-    
-    // Verificar límite para usuarios gratuitos
+
+    // CORREGIDO: Verificar límite usando servicio centralizado
     if (!widget.user.subscription.isPremium) {
-      // Actualizar contador
-      await _checkFreeTierLimits();
-      
-      if (_todayShotsCount >= 20) {
+      final canCreate = await _dailyLimitsService.canCreateShot(widget.user);
+      if (!canCreate) {
         _showLimitReachedDialog();
         return;
       }
     }
-    
+
     // Verificar datos mínimos necesarios
     if (_selectedGoalPosition == null ||
         _selectedShooterPosition == null ||
@@ -1604,13 +1595,13 @@ class _ShotFormPageState extends State<ShotFormPage> {
 
       // Guardar tiro en repositorio
       await widget.shotsRepository.createShot(newShot);
-      
-      // Invalidar caché del contador
-      await _cacheManager.remove('todayShotsCount_${widget.user.id}');
+
+      // CORREGIDO: Invalidar caché usando servicio centralizado
+      await _dailyLimitsService.invalidateTodayCache(widget.user.id);
 
       // Notificar al padre
       widget.onDataRegistered?.call();
-      
+
       // Registrar evento de éxito en crashlytics
       _crashlyticsService.log('Tiro registrado correctamente: ${newShot.id}');
 
@@ -1629,12 +1620,12 @@ class _ShotFormPageState extends State<ShotFormPage> {
     } catch (e) {
       // Registrar error en Crashlytics
       _crashlyticsService.recordError(
-        e, 
+        e,
         StackTrace.current,
         reason: 'Error al guardar tiro',
         fatal: false,
       );
-      
+
       // Mostrar error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1653,25 +1644,23 @@ class _ShotFormPageState extends State<ShotFormPage> {
     }
   }
 
-  // Método para guardar y comenzar un nuevo registro
+  // CORREGIDO: Método _saveAndRegisterAnother usando servicio centralizado
   Future<void> _saveAndRegisterAnother() async {
     // Verificar que hay conexión
     if (!_isConnected) {
       _connectivityService.showConnectivitySnackBar(context);
       return;
     }
-    
-    // Verificar límite para usuarios gratuitos
+
+    // CORREGIDO: Verificar límite usando servicio centralizado
     if (!widget.user.subscription.isPremium) {
-      // Actualizar contador
-      await _checkFreeTierLimits();
-      
-      if (_todayShotsCount >= 20) {
+      final canCreate = await _dailyLimitsService.canCreateShot(widget.user);
+      if (!canCreate) {
         _showLimitReachedDialog();
         return;
       }
     }
-    
+
     // Verificar datos mínimos necesarios
     if (_selectedGoalPosition == null ||
         _selectedShooterPosition == null ||
@@ -1707,15 +1696,16 @@ class _ShotFormPageState extends State<ShotFormPage> {
 
       // Guardar tiro en repositorio
       await widget.shotsRepository.createShot(newShot);
-      
-      // Invalidar caché del contador
-      await _cacheManager.remove('todayShotsCount_${widget.user.id}');
+
+      // CORREGIDO: Invalidar caché usando servicio centralizado
+      await _dailyLimitsService.invalidateTodayCache(widget.user.id);
 
       // Notificar al padre
       widget.onDataRegistered?.call();
-      
+
       // Registrar evento de éxito en crashlytics
-      _crashlyticsService.log('Tiro registrado correctamente: ${newShot.id} (continuar registrando)');
+      _crashlyticsService.log(
+          'Tiro registrado correctamente: ${newShot.id} (continuar registrando)');
 
       // Mostrar mensaje de éxito
       if (mounted) {
@@ -1726,9 +1716,20 @@ class _ShotFormPageState extends State<ShotFormPage> {
           ),
         );
 
-        // Reiniciar formulario para registrar otro tiro, MANTENIENDO la referencia al partido
+        // CORREGIDO: Actualizar información de límites antes de continuar
+        if (!widget.user.subscription.isPremium) {
+          await _checkFreeTierLimits();
+
+          // Si después de actualizar se alcanza el límite, no permitir continuar
+          if (_limitInfo?.hasReachedLimit ?? false) {
+            _showLimitReachedDialog();
+            return;
+          }
+        }
+
+        // Reiniciar formulario para registrar otro tiro
         setState(() {
-          _currentStep = 1; // Volver al primer paso real (posición en portería)
+          _currentStep = 1; // Volver al primer paso real
           _selectedGoalPosition = null;
           _selectedShooterPosition = null;
           _selectedGoalkeeperPosition = null;
@@ -1741,22 +1742,17 @@ class _ShotFormPageState extends State<ShotFormPage> {
           _notes = null;
           _minuteController.clear();
           _notesController.clear();
-          
-          // Incrementar contador local para mantener la interfaz actualizada
-          if (!widget.user.subscription.isPremium) {
-            _todayShotsCount++;
-          }
         });
       }
     } catch (e) {
       // Registrar error en Crashlytics
       _crashlyticsService.recordError(
-        e, 
+        e,
         StackTrace.current,
         reason: 'Error al guardar tiro (continuar registrando)',
         fatal: false,
       );
-      
+
       // Mostrar error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

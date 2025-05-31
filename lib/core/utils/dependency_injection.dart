@@ -21,6 +21,8 @@ import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_re
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
+import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
+import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Servicio de límites
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 enum StorageMode {
@@ -38,35 +40,46 @@ class DependencyInjection {
     _initializeServices();
   }
 
-  // Por defecto, usar almacenamiento local
+  // Por defecto, usar almacenamiento Firebase
   StorageMode _currentMode = StorageMode.firebase;
-  
+
   // Instancias de repositorios (inicializadas bajo demanda)
   AuthRepository? _authRepository;
   ShotsRepository? _shotsRepository;
   MatchesRepository? _matchesRepository;
   GoalkeeperPassesRepository? _passesRepository;
-  
+
   // Instancias de servicios
   CacheManager? _cacheManager;
   ConnectivityService? _connectivityService;
   AnalyticsService? _analyticsService;
+  FirebaseCrashlyticsService? _crashlyticsService;
+  DailyLimitsService? _dailyLimitsService; // NUEVO: Servicio de límites
 
   // Inicialización de servicios
   Future<void> _initializeServices() async {
     _cacheManager = CacheManager();
     await _cacheManager!.init();
-    
+
     _connectivityService = ConnectivityService();
     _analyticsService = AnalyticsService();
+    _crashlyticsService = FirebaseCrashlyticsService();
+
+    // NUEVO: Inicializar servicio de límites diarios
+    _dailyLimitsService = DailyLimitsService(
+      cacheManager: _cacheManager,
+      crashlyticsService: _crashlyticsService,
+    );
   }
-  
+
   // Reiniciar todas las instancias cuando cambie el modo
   void _resetRepositories() {
     _authRepository = null;
     _shotsRepository = null;
     _matchesRepository = null;
     _passesRepository = null;
+    // NUEVO: También resetear servicio de límites si cambia el modo
+    _dailyLimitsService = null;
   }
 
   // Getters para los repositorios con lazy initialization
@@ -75,6 +88,7 @@ class DependencyInjection {
     return _authRepository!;
   }
 
+  // CORREGIDO: ShotsRepository ahora incluye DailyLimitsService
   ShotsRepository get shotsRepository {
     _shotsRepository ??= _createShotsRepository();
     return _shotsRepository!;
@@ -89,7 +103,7 @@ class DependencyInjection {
     _passesRepository ??= _createPassesRepository();
     return _passesRepository!;
   }
-  
+
   // Getters para los servicios
   CacheManager get cacheManager {
     _cacheManager ??= CacheManager()..init();
@@ -105,7 +119,23 @@ class DependencyInjection {
     _analyticsService ??= AnalyticsService();
     return _analyticsService!;
   }
-  
+
+  FirebaseCrashlyticsService get crashlyticsService {
+    _crashlyticsService ??= FirebaseCrashlyticsService();
+    return _crashlyticsService!;
+  }
+
+  // NUEVO: Getter para servicio de límites diarios
+  DailyLimitsService get dailyLimitsService {
+    if (_dailyLimitsService == null) {
+      _dailyLimitsService = DailyLimitsService(
+        cacheManager: cacheManager,
+        crashlyticsService: crashlyticsService,
+      );
+    }
+    return _dailyLimitsService!;
+  }
+
   // Crashlytics
   FirebaseCrashlytics get crashlytics => FirebaseCrashlytics.instance;
 
@@ -116,6 +146,7 @@ class DependencyInjection {
         : FirebaseAuthRepository();
   }
 
+  // CORREGIDO: Incluir DailyLimitsService en ShotsRepository
   ShotsRepository _createShotsRepository() {
     if (_currentMode == StorageMode.local) {
       return LocalShotsRepository();
@@ -123,6 +154,7 @@ class DependencyInjection {
       return FirebaseShotsRepository(
         authRepository: authRepository,
         cacheManager: cacheManager,
+        dailyLimitsService: dailyLimitsService, // NUEVO parámetro
       );
     }
   }
@@ -167,6 +199,37 @@ class DependencyInjection {
     } catch (e) {
       return false;
     }
+  }
+
+  // NUEVO: Método para limpiar recursos
+  void dispose() {
+    _connectivityService?.dispose();
+    _crashlyticsService?.dispose();
+    // El resto de servicios se limpiarán automáticamente
+  }
+
+  // NUEVO: Método para reinicializar todos los servicios (útil para testing)
+  Future<void> reinitialize() async {
+    _resetRepositories();
+    await _initializeServices();
+  }
+
+  // NUEVO: Método para obtener información de debug
+  Map<String, dynamic> getDebugInfo() {
+    return {
+      'storageMode': _currentMode.toString(),
+      'authRepository': _authRepository?.runtimeType.toString(),
+      'shotsRepository': _shotsRepository?.runtimeType.toString(),
+      'matchesRepository': _matchesRepository?.runtimeType.toString(),
+      'passesRepository': _passesRepository?.runtimeType.toString(),
+      'services': {
+        'cacheManager': _cacheManager != null,
+        'connectivityService': _connectivityService != null,
+        'analyticsService': _analyticsService != null,
+        'crashlyticsService': _crashlyticsService != null,
+        'dailyLimitsService': _dailyLimitsService != null,
+      },
+    };
   }
 }
 

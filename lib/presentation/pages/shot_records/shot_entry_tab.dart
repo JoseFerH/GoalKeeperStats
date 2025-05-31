@@ -11,7 +11,7 @@ import 'package:goalkeeper_stats/presentation/pages/goalkeeper_passes/goalkeeper
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Importación del servicio de límites
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ShotEntryTab extends StatefulWidget {
@@ -21,7 +21,7 @@ class ShotEntryTab extends StatefulWidget {
   final GoalkeeperPassesRepository passesRepository;
   final String? preSelectedMatchId; // Parámetro para preseleccionar partido
   final Function? onDataRegistered; // Callback para notificar registros
-  
+
   final bool isConnected; // <-- Añadir parámetro
 
   const ShotEntryTab({
@@ -31,7 +31,7 @@ class ShotEntryTab extends StatefulWidget {
     required this.shotsRepository,
     required this.passesRepository,
     required this.isConnected, // <-- Incluir en el constructor
-    
+
     this.preSelectedMatchId,
     this.onDataRegistered,
   }) : super(key: key);
@@ -48,14 +48,24 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
   final ConnectivityService _connectivityService = ConnectivityService();
   final FirebaseCrashlyticsService _crashlyticsService =
       FirebaseCrashlyticsService();
-  int _todayShotsCount = 0;
+
+  // NUEVO: Usar servicio centralizado de límites
+  late final DailyLimitsService _dailyLimitsService;
+  DailyLimitInfo? _limitInfo; // NUEVO: Información del límite
   bool _isLoadingLimit = false;
 
   @override
   void initState() {
     super.initState();
+
+    // NUEVO: Inicializar servicio de límites
+    _dailyLimitsService = DailyLimitsService(
+      cacheManager: _cacheManager,
+      crashlyticsService: _crashlyticsService,
+    );
+
     _setupConnectivity();
-    _checkFreeTierLimits();
+    _checkFreeTierLimits(); // CORREGIDO: Usar nuevo método
 
     // Si hay un ID de partido preseleccionado, cargarlo
     if (widget.preSelectedMatchId != null) {
@@ -89,61 +99,36 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     });
   }
 
+  // CORREGIDO: Nuevo método usando servicio centralizado
   Future<void> _checkFreeTierLimits() async {
-    if (widget.user.subscription.isPremium) {
-      return; // No hay límites para usuarios premium
-    }
-
     setState(() {
       _isLoadingLimit = true;
     });
 
     try {
-      // Verificar si hay datos en caché
-      final cachedCount =
-          await _cacheManager.get<int>('todayShotsCount_${widget.user.id}');
-      if (cachedCount != null) {
-        setState(() {
-          _todayShotsCount = cachedCount;
-          _isLoadingLimit = false;
-        });
-        return;
-      }
-
-      // Obtener conteo desde Firestore con timeframe preciso
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-
-      final shotsSnapshot = await FirebaseFirestore.instance
-          .collection('shots')
-          .where('userId', isEqualTo: widget.user.id)
-          .where('timestamp', isGreaterThanOrEqualTo: startOfDay)
-          .where('timestamp', isLessThanOrEqualTo: endOfDay)
-          .get();
-
-      final count = shotsSnapshot.docs.length;
-
-      // Guardar en caché por 5 minutos
-      await _cacheManager.set<int>('todayShotsCount_${widget.user.id}', count,
-          duration: 300);
+      final limitInfo = await _dailyLimitsService.getLimitInfo(widget.user);
 
       setState(() {
-        _todayShotsCount = count;
+        _limitInfo = limitInfo;
+        _isLoadingLimit = false;
       });
     } catch (e) {
       _crashlyticsService.recordError(
         e,
         StackTrace.current,
-        reason: 'Error al verificar límite de tiros diarios',
+        reason: 'Error al verificar límite de tiros diarios en entry tab',
       );
-      // Enfoque conservador: asumir que ya alcanzó el límite
-      setState(() {
-        _todayShotsCount = 20;
-      });
-    } finally {
+
       setState(() {
         _isLoadingLimit = false;
+        // En caso de error, asumir límite alcanzado para usuarios gratuitos
+        _limitInfo = DailyLimitInfo(
+          isPremium: widget.user.subscription.isPremium,
+          dailyLimit: widget.user.subscription.isPremium ? -1 : 20,
+          todayCount: widget.user.subscription.isPremium ? 0 : 20,
+          hasReachedLimit: !widget.user.subscription.isPremium,
+          remainingShots: widget.user.subscription.isPremium ? -1 : 0,
+        );
       });
     }
   }
@@ -218,7 +203,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     }
   }
 
-  // Método para navegar al formulario de tiro con un partido específico
+  // CORREGIDO: Método _navigateToShotForm usando servicio centralizado
   void _navigateToShotForm(MatchModel match) async {
     final result = await Navigator.push(
       context,
@@ -232,14 +217,14 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       ),
     );
 
-    // Si se regresa con un resultado exitoso, notificar y actualizar contadores
+    // CORREGIDO: Si se regresa con éxito, actualizar límites
     if (result == true) {
       widget.onDataRegistered?.call();
 
       // Invalidar caché de límites para usuarios gratuitos
       if (!widget.user.subscription.isPremium) {
-        await _cacheManager.remove('todayShotsCount_${widget.user.id}');
-        _checkFreeTierLimits();
+        await _dailyLimitsService.invalidateTodayCache(widget.user.id);
+        _checkFreeTierLimits(); // Recargar información de límites
       }
     }
   }
@@ -276,9 +261,10 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     );
   }
 
+  // CORREGIDO: Método _buildContent usando la nueva información de límites
   Widget _buildContent() {
     final isPremium = widget.user.subscription.isPremium;
-    final hasReachedLimit = _todayShotsCount >= 20;
+    final hasReachedLimit = _limitInfo?.hasReachedLimit ?? false;
 
     return SingleChildScrollView(
       child: Padding(
@@ -309,8 +295,8 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                 ),
               ),
 
-            // Límite de tiros para usuarios gratuitos
-            if (!isPremium)
+            // CORREGIDO: Límite de tiros usando nueva información
+            if (!isPremium && _limitInfo != null)
               Container(
                 padding: const EdgeInsets.all(12),
                 margin: const EdgeInsets.only(bottom: 16),
@@ -337,9 +323,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                       child: _isLoadingLimit
                           ? const Text("Verificando límites diarios...")
                           : Text(
-                              hasReachedLimit
-                                  ? 'Has alcanzado el límite de 20 tiros diarios. Actualiza a Premium para eliminar esta restricción.'
-                                  : 'Tiros registrados hoy: $_todayShotsCount de 20',
+                              _limitInfo!.displayMessage,
                               style: TextStyle(
                                 color: hasReachedLimit
                                     ? Colors.red.shade700
@@ -351,7 +335,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                 ),
               ),
 
-            // Tarjeta de registro de tiros
+            // Tarjeta de registro de tiros (CORREGIDO: usar hasReachedLimit de limitInfo)
             _buildActionCard(
               title: 'Registrar Tiro',
               icon: Icons.sports_soccer,
@@ -517,10 +501,10 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Límite diario alcanzado'),
-        content: const Text(
+        content: Text(_limitInfo?.displayMessage ??
             'Has alcanzado el límite de 20 tiros diarios para usuarios gratuitos. '
-            'Actualiza a Premium para registrar tiros ilimitados y tener acceso '
-            'a todas las funciones.'),
+                'Actualiza a Premium para registrar tiros ilimitados y tener acceso '
+                'a todas las funciones.'),
         actions: [
           TextButton(
             onPressed: () {
@@ -638,6 +622,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     }
   }
 
+  // CORREGIDO: Método _startShotRegistration usando servicio centralizado
   void _startShotRegistration() async {
     final isPremium = widget.user.subscription.isPremium;
 
@@ -646,10 +631,13 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       return;
     }
 
-    // Verificar límite de tiros para usuarios gratuitos
-    if (!isPremium && _todayShotsCount >= 20) {
-      _showLimitReachedDialog();
-      return;
+    // CORREGIDO: Verificar límite usando servicio centralizado
+    if (!isPremium) {
+      final canCreate = await _dailyLimitsService.canCreateShot(widget.user);
+      if (!canCreate) {
+        _showLimitReachedDialog();
+        return;
+      }
     }
 
     // Si ya hay un partido preseleccionado, usarlo directamente
@@ -697,11 +685,11 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
             ),
           );
 
-          // Si se regresa con un resultado exitoso, notificar y actualizar conteo
+          // CORREGIDO: Si se regresa con éxito, actualizar límites
           if (shotResult == true) {
             widget.onDataRegistered?.call();
-            await _cacheManager.remove('todayShotsCount_${widget.user.id}');
-            _checkFreeTierLimits();
+            await _dailyLimitsService.invalidateTodayCache(widget.user.id);
+            _checkFreeTierLimits(); // Recargar información de límites
           }
         }
       }
@@ -747,7 +735,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
           builder: (context) => MatchFormPage(
             userId: widget.user.id,
             matchesRepository: widget.matchesRepository,
-            user: widget.user,  // Añadir este parámetro obligatorio
+            user: widget.user, // Añadir este parámetro obligatorio
           ),
         ),
       );
