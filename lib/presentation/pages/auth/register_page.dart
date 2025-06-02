@@ -1,42 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:goalkeeper_stats/services/analytics_service.dart';
-import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
 import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
-import 'package:goalkeeper_stats/presentation/pages/auth/register_page.dart';
-import 'package:goalkeeper_stats/presentation/pages/auth/forgot_password_page.dart';
+import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:provider/provider.dart';
+import 'package:goalkeeper_stats/services/connectivity_service.dart';
 
-/// Página de inicio de sesión con soporte para email/contraseña y Google
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+/// Página de registro para nuevos usuarios
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _RegisterPageState extends State<RegisterPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-  bool _isPasswordVisible = false;
+  final _confirmPasswordController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    // Disparar evento de verificación de estado al iniciar
-    context.read<AuthBloc>().add(CheckAuthStatusEvent());
-  }
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
+  bool _acceptTerms = false;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -45,7 +41,6 @@ class _LoginPageState extends State<LoginPage> {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthenticatedState) {
-          debugPrint("Estado autenticado detectado. Navegando al dashboard...");
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => DashboardPage(user: state.user),
@@ -54,9 +49,6 @@ class _LoginPageState extends State<LoginPage> {
         }
 
         if (state is AuthErrorState) {
-          FirebaseCrashlytics.instance
-              .log("Error de autenticación en UI: ${state.message}");
-
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -75,6 +67,14 @@ class _LoginPageState extends State<LoginPage> {
       },
       builder: (context, state) {
         return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
           body: Stack(
             children: [
               _buildContent(context),
@@ -82,7 +82,9 @@ class _LoginPageState extends State<LoginPage> {
                 Container(
                   color: Colors.black.withOpacity(0.3),
                   child: const Center(
-                    child: CircularProgressIndicator(),
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
                   ),
                 ),
             ],
@@ -127,17 +129,17 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   child: const Icon(
                     Icons.sports_soccer,
-                    size: 80,
+                    size: 60,
                     color: Colors.green,
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
 
-                // Título de la aplicación
+                // Título
                 const Text(
-                  'Goalkeeper Stats',
+                  'Crear Cuenta',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -146,16 +148,16 @@ class _LoginPageState extends State<LoginPage> {
 
                 // Descripción
                 const Text(
-                  'Registra, analiza y mejora tu rendimiento como portero',
+                  'Únete a la comunidad de porteros y mejora tu rendimiento',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white70,
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
 
-                // Formulario de email y contraseña
+                // Formulario de registro
                 Card(
                   elevation: 8,
                   shape: RoundedRectangleBorder(
@@ -167,6 +169,28 @@ class _LoginPageState extends State<LoginPage> {
                       key: _formKey,
                       child: Column(
                         children: [
+                          // Campo de nombre
+                          TextFormField(
+                            controller: _nameController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre completo',
+                              prefixIcon: Icon(Icons.person),
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Por favor ingresa tu nombre';
+                              }
+                              if (value.trim().length < 2) {
+                                return 'El nombre debe tener al menos 2 caracteres';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Campo de email
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
@@ -176,16 +200,21 @@ class _LoginPageState extends State<LoginPage> {
                               border: OutlineInputBorder(),
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) {
+                              if (value == null || value.trim().isEmpty) {
                                 return 'Por favor ingresa tu email';
                               }
-                              if (!value.contains('@')) {
+                              // Validación básica de email
+                              final emailRegex =
+                                  RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                              if (!emailRegex.hasMatch(value.trim())) {
                                 return 'Por favor ingresa un email válido';
                               }
                               return null;
                             },
                           ),
                           const SizedBox(height: 16),
+
+                          // Campo de contraseña
                           TextFormField(
                             controller: _passwordController,
                             obscureText: !_isPasswordVisible,
@@ -208,41 +237,86 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Por favor ingresa tu contraseña';
+                                return 'Por favor ingresa una contraseña';
                               }
                               if (value.length < 6) {
                                 return 'La contraseña debe tener al menos 6 caracteres';
+                              }
+                              if (!RegExp(r'^(?=.*[a-zA-Z])(?=.*[0-9])')
+                                  .hasMatch(value)) {
+                                return 'La contraseña debe contener letras y números';
                               }
                               return null;
                             },
                           ),
                           const SizedBox(height: 16),
 
-                          // NUEVO: Link de recuperación de contraseña
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ForgotPasswordPage(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                '¿Olvidaste tu contraseña?',
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.w500,
+                          // Campo de confirmar contraseña
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: !_isConfirmPasswordVisible,
+                            decoration: InputDecoration(
+                              labelText: 'Confirmar contraseña',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _isConfirmPasswordVisible
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
                                 ),
+                                onPressed: () {
+                                  setState(() {
+                                    _isConfirmPasswordVisible =
+                                        !_isConfirmPasswordVisible;
+                                  });
+                                },
                               ),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Por favor confirma tu contraseña';
+                              }
+                              if (value != _passwordController.text) {
+                                return 'Las contraseñas no coinciden';
+                              }
+                              return null;
+                            },
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 16),
 
+                          // Checkbox de términos y condiciones
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: _acceptTerms,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _acceptTerms = value ?? false;
+                                  });
+                                },
+                                activeColor: Colors.green,
+                              ),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _acceptTerms = !_acceptTerms;
+                                    });
+                                  },
+                                  child: const Text(
+                                    'Acepto los términos y condiciones de uso',
+                                    style: TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Botón de registrarse
                           ElevatedButton(
-                            onPressed: _handleEmailSignIn,
+                            onPressed: _acceptTerms ? _handleRegister : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
@@ -254,10 +328,12 @@ class _LoginPageState extends State<LoginPage> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
+                              disabledBackgroundColor: Colors.grey,
                             ),
                             child: const Text(
-                              'Iniciar Sesión',
-                              style: TextStyle(fontSize: 16),
+                              'Registrarse',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
@@ -298,22 +374,16 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 24),
 
-                // Botón de inicio de sesión con Google
-                _buildGoogleSignInButton(context),
+                // Botón de registro con Google
+                _buildGoogleSignUpButton(context),
 
                 const SizedBox(height: 24),
 
-                // NUEVO: Link para registro
+                // Link para ir al login
                 TextButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const RegisterPage(),
-                      ),
-                    );
-                  },
+                  onPressed: () => Navigator.of(context).pop(),
                   child: const Text(
-                    '¿No tienes una cuenta? Regístrate',
+                    '¿Ya tienes una cuenta? Inicia sesión',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -322,9 +392,9 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 20),
 
-                // Nota de versión freemium
+                // Nota sobre versión gratuita
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -337,8 +407,8 @@ class _LoginPageState extends State<LoginPage> {
                       SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Versión gratuita disponible con funciones limitadas. Actualiza a Premium para acceso completo.',
-                          style: TextStyle(color: Colors.white70),
+                          'Comenzarás con una cuenta gratuita con funciones limitadas. Podrás actualizar a Premium en cualquier momento.',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                       ),
                     ],
@@ -352,13 +422,24 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  void _handleEmailSignIn() async {
+  void _handleRegister() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
+    if (!_acceptTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Debes aceptar los términos y condiciones para continuar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     try {
-      // Obtener el servicio de conectividad desde el Provider
+      // Verificar conectividad
       final connectivityService =
           Provider.of<ConnectivityService>(context, listen: false);
       final isConnected = await connectivityService.checkConnectivity();
@@ -376,34 +457,36 @@ class _LoginPageState extends State<LoginPage> {
 
       // Registrar evento de analítica
       AnalyticsService()
-          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
+          .logEvent(name: 'register_attempt', parameters: {'method': 'email'});
 
-      // Crear evento de inicio de sesión con email/contraseña
+      // Crear evento de registro
       context.read<AuthBloc>().add(
-            SignInWithEmailPasswordEvent(
+            RegisterWithEmailPasswordEvent(
               email: _emailController.text.trim(),
               password: _passwordController.text,
+              displayName: _nameController.text.trim(),
             ),
           );
     } catch (e) {
-      debugPrint("Error al iniciar sesión: $e");
-      // Si hay error obteniendo el servicio, continuar con el inicio de sesión
+      debugPrint("Error al registrarse: $e");
+      // Si hay error obteniendo el servicio, continuar con el registro
       AnalyticsService()
-          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
+          .logEvent(name: 'register_attempt', parameters: {'method': 'email'});
 
       context.read<AuthBloc>().add(
-            SignInWithEmailPasswordEvent(
+            RegisterWithEmailPasswordEvent(
               email: _emailController.text.trim(),
               password: _passwordController.text,
+              displayName: _nameController.text.trim(),
             ),
           );
     }
   }
 
-  Widget _buildGoogleSignInButton(BuildContext context) {
-    void attemptSignIn() async {
+  Widget _buildGoogleSignUpButton(BuildContext context) {
+    void attemptGoogleSignUp() async {
       try {
-        // Obtener el servicio de conectividad desde el Provider
+        // Verificar conectividad
         final connectivityService =
             Provider.of<ConnectivityService>(context, listen: false);
         final isConnected = await connectivityService.checkConnectivity();
@@ -419,22 +502,22 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        AnalyticsService()
-            .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
+        AnalyticsService().logEvent(
+            name: 'register_attempt', parameters: {'method': 'google'});
 
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       } catch (e) {
         debugPrint("Error al verificar conectividad: $e");
-        // Si hay error obteniendo el servicio, continuar con el inicio de sesión
-        AnalyticsService()
-            .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
+        // Si hay error obteniendo el servicio, continuar con el registro
+        AnalyticsService().logEvent(
+            name: 'register_attempt', parameters: {'method': 'google'});
 
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       }
     }
 
     return ElevatedButton(
-      onPressed: attemptSignIn,
+      onPressed: attemptGoogleSignUp,
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
@@ -461,7 +544,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           const SizedBox(width: 12),
           const Text(
-            'Iniciar sesión con Google',
+            'Registrarse con Google',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,

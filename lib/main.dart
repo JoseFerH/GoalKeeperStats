@@ -24,6 +24,7 @@ import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
 import 'package:goalkeeper_stats/services/purchase_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Servicio de límites
+import 'package:goalkeeper_stats/services/ad_service.dart'; // NUEVO: Servicio de anuncios
 import 'package:goalkeeper_stats/core/constants/app_constants.dart';
 
 // Variables globales para los repositorios
@@ -39,6 +40,7 @@ late FirebaseCrashlyticsService crashlyticsService;
 late PurchaseService purchaseService;
 late AnalyticsService analyticsService;
 late DailyLimitsService dailyLimitsService; // NUEVO: Servicio de límites
+late AdService adService; // NUEVO: Servicio de anuncios
 
 Future<void> main() async {
   // Inicialización de Flutter
@@ -117,7 +119,19 @@ Future<void> main() async {
     );
     debugPrint('✅ DailyLimitsService inicializado');
 
-    // 4. Inicializar PurchaseService
+    // 4. NUEVO: Inicializar servicio de anuncios
+    adService = AdService();
+    debugPrint('🎯 Inicializando AdService...');
+
+    final adServiceInitialized = await adService.initialize();
+    if (adServiceInitialized) {
+      debugPrint('✅ AdService inicializado correctamente');
+    } else {
+      debugPrint(
+          '⚠️ AdService no se pudo inicializar (los anuncios pueden no estar disponibles)');
+    }
+
+    // 5. Inicializar PurchaseService
     purchaseService = PurchaseService();
     debugPrint('🛒 Inicializando PurchaseService...');
 
@@ -285,6 +299,9 @@ class GoalkeeperStatsApp extends StatelessWidget {
 
         // NUEVO: Añadir DailyLimitsService a los providers
         Provider<DailyLimitsService>.value(value: dailyLimitsService),
+
+        // NUEVO: Añadir AdService a los providers
+        Provider<AdService>.value(value: adService),
 
         // BLoC providers
         BlocProvider<AuthBloc>(

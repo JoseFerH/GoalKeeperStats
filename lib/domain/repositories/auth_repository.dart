@@ -1,7 +1,6 @@
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/data/models/user_settings.dart';
 import 'package:goalkeeper_stats/data/models/subscription_info.dart';
-import 'package:goalkeeper_stats/core/utils/dependency_injection.dart';
 
 /// Interfaz que define las operaciones de autenticación
 abstract class AuthRepository {
@@ -10,6 +9,28 @@ abstract class AuthRepository {
 
   /// Inicia sesión con Google
   Future<UserModel> signInWithGoogle();
+
+  /// Inicia sesión con email y contraseña
+  Future<UserModel> signInWithEmailPassword({
+    required String email,
+    required String password,
+  });
+
+  /// Registra un nuevo usuario con email y contraseña
+  Future<UserModel> registerWithEmailPassword({
+    required String email,
+    required String password,
+    required String displayName,
+  });
+
+  /// Envía un email de recuperación de contraseña
+  Future<void> sendPasswordResetEmail(String email);
+
+  /// Actualiza la contraseña del usuario actual
+  Future<void> updatePassword(String newPassword);
+
+  /// Reautentica al usuario con su contraseña actual
+  Future<void> reauthenticateWithPassword(String currentPassword);
 
   /// Cierra la sesión del usuario actual
   Future<void> signOut();

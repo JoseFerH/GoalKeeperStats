@@ -2,11 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	 <!-- Añade estas entradas dentro del tag dict principal -->
-    <key>NSCameraUsageDescription</key>
-    <string>Esta aplicación necesita acceso a la cámara para cambiar tu foto de perfil</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>Esta aplicación necesita acceso a la galería para cambiar tu foto de perfil</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -36,8 +31,7 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -46,9 +40,39 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- NUEVO: Configuración para AdMob -->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX</string>
+	
+	<!-- NUEVO: Configuración App Transport Security para anuncios -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	
+	<!-- NUEVO: Configuración para tracking de anuncios (iOS 14+) -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Esta aplicación utiliza el identificador de dispositivo para servir anuncios personalizados.</string>
+	
+	<!-- NUEVO: Scheme personalizados si es necesario -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>goalkeeper-stats-scheme</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>goalkeeper-stats</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

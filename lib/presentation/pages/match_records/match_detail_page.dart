@@ -42,11 +42,11 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
   bool _isLoading = false;
   late MatchModel _match;
 
-  // Repositorio de tiros y servicios
+  // CORREGIDO: Usar servicios desde DependencyInjection en lugar de crear nuevas instancias
   late ShotsRepository _shotsRepository;
-  final CacheManager _cacheManager = CacheManager();
-  final FirebaseCrashlyticsService _crashlytics = FirebaseCrashlyticsService();
-  final AnalyticsService _analytics = AnalyticsService();
+  late CacheManager _cacheManager;
+  late FirebaseCrashlyticsService _crashlytics;
+  late AnalyticsService _analytics;
 
   // Clave para la caché
   String get _statsCacheKey => 'match_stats_${_match.id}';
@@ -56,14 +56,18 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     super.initState();
     _match = widget.match;
 
-    // Inicializar repositorio de Firebase
-    _shotsRepository = FirebaseShotsRepository(authRepository: DependencyInjection().authRepository);
+    // CORREGIDO: Usar instancias desde DependencyInjection (no Provider)
+    final di = DependencyInjection();
+    _shotsRepository = di.shotsRepository;
+    _cacheManager = di.cacheManager;
+    _crashlytics = di.crashlyticsService;
+    _analytics = di.analyticsService;
 
     _loadData();
 
     // Registrar visualización en Analytics
     _analytics.logEvent(
-      name:'match_detail_view',
+      name: 'match_detail_view',
       parameters: {
         'match_id': _match.id,
         'match_type': _match.type,
@@ -385,10 +389,12 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
                   TextButton(
                     onPressed: () {
                       // Navegar a pantalla de suscripción
-                      _analytics.logEvent(name:'premium_upgrade_click', parameters: {
-                        'screen': 'match_detail',
-                        'match_id': _match.id
-                      });
+                      _analytics.logEvent(
+                          name: 'premium_upgrade_click',
+                          parameters: {
+                            'screen': 'match_detail',
+                            'match_id': _match.id
+                          });
                       // Implementar navegación a pantalla de suscripción
                     },
                     style: TextButton.styleFrom(
@@ -794,7 +800,8 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           onPressed: (widget.isConnected && isPremium)
               ? () {
                   // Navegar a estadísticas detalladas del partido
-                  _analytics.logEvent(name:'match_detailed_stats_view', parameters: {
+                  _analytics
+                      .logEvent(name: 'match_detailed_stats_view', parameters: {
                     'match_id': _match.id,
                     'match_type': _match.type,
                   });
@@ -842,7 +849,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     }
 
     // Registrar evento en Analytics
-    _analytics.logEvent(name:'add_shot_from_match', parameters: {
+    _analytics.logEvent(name: 'add_shot_from_match', parameters: {
       'match_id': _match.id,
       'match_type': _match.type,
     });
@@ -855,7 +862,8 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           user: widget.user,
           matchesRepository: widget.matchesRepository,
           shotsRepository: _shotsRepository,
-          passesRepository: DependencyInjection().passesRepository, // Será proporcionado por la pantalla real
+          passesRepository: DependencyInjection()
+              .passesRepository, // Será proporcionado por la pantalla real
           //preselectedMatchId: _match.id,
           isConnected: true,
         ),
@@ -888,7 +896,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
     }
 
     // Registrar evento en Analytics
-    _analytics.logEvent(name:'edit_match', parameters: {
+    _analytics.logEvent(name: 'edit_match', parameters: {
       'match_id': _match.id,
       'match_type': _match.type,
     });
@@ -900,7 +908,6 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
           userId: _match.userId,
           matchesRepository: widget.matchesRepository,
           match: _match,
-          
           user: widget.user,
         ),
       ),
@@ -983,7 +990,7 @@ class _MatchDetailPageState extends State<MatchDetailPage> {
       await _cacheManager.remove(_statsCacheKey);
 
       // Registrar evento en Analytics
-      _analytics.logEvent(name:'delete_match', parameters: {
+      _analytics.logEvent(name: 'delete_match', parameters: {
         'match_id': _match.id,
         'match_type': _match.type,
       });

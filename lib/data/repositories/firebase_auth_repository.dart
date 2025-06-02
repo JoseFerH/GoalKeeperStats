@@ -56,6 +56,370 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
+  /// NUEVO: Registra un nuevo usuario con email y contraseña
+  @override
+  Future<UserModel> registerWithEmailPassword({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    try {
+      debugPrint('📝 Registrando nuevo usuario: $email');
+
+      // Verificar conectividad
+      await _verifyConnectivity();
+
+      // Crear cuenta en Firebase Auth
+      final userCredential = await _firebaseAuth
+          .createUserWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          )
+          .timeout(_authTimeout);
+
+      final User? firebaseUser = userCredential.user;
+
+      if (firebaseUser == null) {
+        throw Exception('Error al crear la cuenta');
+      }
+
+      debugPrint('✅ Cuenta creada en Firebase Auth: ${firebaseUser.uid}');
+
+      // Actualizar el nombre de usuario en Firebase Auth
+      await firebaseUser.updateDisplayName(displayName.trim());
+      await firebaseUser.reload();
+
+      // Crear el modelo de usuario
+      final newUser = UserModel.newUser(
+        id: firebaseUser.uid,
+        name: displayName.trim(),
+        email: email.trim(),
+        photoUrl: firebaseUser.photoURL,
+      );
+
+      // Guardar en Firestore
+      await _firestore.collection(_usersCollection).doc(firebaseUser.uid).set({
+        ...newUser.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+        'registrationMethod': 'email', // NUEVO: Método de registro
+      }).timeout(_firestoreTimeout);
+
+      debugPrint('✅ Usuario guardado en Firestore');
+
+      // Actualizar caché
+      await _cacheManager.set(_userCacheKey, newUser);
+
+      // Actualizar datos en Crashlytics
+      _updateCrashlyticsUserData(newUser);
+
+      debugPrint('✅ Registro exitoso con email');
+      return newUser;
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException en registro: ${e.code}');
+
+      // Registrar error específico de Firebase Auth
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error en registro con email: ${e.code}');
+
+      // Manejar errores específicos
+      switch (e.code) {
+        case 'email-already-in-use':
+          throw Exception('Ya existe una cuenta con este email.');
+        case 'weak-password':
+          throw Exception('La contraseña es muy débil.');
+        case 'invalid-email':
+          throw Exception('El email ingresado no es válido.');
+        case 'operation-not-allowed':
+          throw Exception('El registro con email no está habilitado.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        case 'too-many-requests':
+          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
+        default:
+          throw Exception('Error al crear la cuenta: ${e.message}');
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error general en registro: $e');
+
+      // Registrar otros errores
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error en registro con email/contraseña');
+
+      if (e.toString().contains('timeout') ||
+          e.toString().contains('Timeout')) {
+        throw Exception('La creación de cuenta está tardando demasiado. '
+            'Verifica tu conexión e intenta nuevamente.');
+      }
+
+      throw Exception('Error al crear la cuenta. Intenta nuevamente.');
+    }
+  }
+
+  /// NUEVO: Envía un email de recuperación de contraseña
+  @override
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      debugPrint('📧 Enviando email de recuperación a: $email');
+
+      // Verificar conectividad
+      await _verifyConnectivity();
+
+      await _firebaseAuth
+          .sendPasswordResetEmail(email: email.trim())
+          .timeout(_authTimeout);
+
+      debugPrint('✅ Email de recuperación enviado');
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException en recuperación: ${e.code}');
+
+      // Registrar error
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error enviando email de recuperación: ${e.code}');
+
+      // Manejar errores específicos
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('No se encontró un usuario con este email.');
+        case 'invalid-email':
+          throw Exception('El email ingresado no es válido.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        case 'too-many-requests':
+          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
+        default:
+          throw Exception(
+              'Error al enviar email de recuperación: ${e.message}');
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error general en recuperación: $e');
+
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error enviando email de recuperación');
+
+      if (e.toString().contains('timeout') ||
+          e.toString().contains('Timeout')) {
+        throw Exception('El envío del email está tardando demasiado. '
+            'Verifica tu conexión e intenta nuevamente.');
+      }
+
+      throw Exception('Error al enviar email de recuperación.');
+    }
+  }
+
+  /// NUEVO: Actualiza la contraseña del usuario actual
+  @override
+  Future<void> updatePassword(String newPassword) async {
+    try {
+      debugPrint('🔒 Actualizando contraseña del usuario');
+
+      final User? currentUser = _firebaseAuth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No hay usuario autenticado');
+      }
+
+      // Verificar conectividad
+      await _verifyConnectivity();
+
+      await currentUser.updatePassword(newPassword).timeout(_authTimeout);
+
+      debugPrint('✅ Contraseña actualizada exitosamente');
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException actualizando contraseña: ${e.code}');
+
+      // Registrar error
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error actualizando contraseña: ${e.code}');
+
+      // Manejar errores específicos
+      switch (e.code) {
+        case 'weak-password':
+          throw Exception('La nueva contraseña es muy débil.');
+        case 'requires-recent-login':
+          throw Exception(
+              'Necesitas autenticarte de nuevo para cambiar la contraseña.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        default:
+          throw Exception('Error al actualizar contraseña: ${e.message}');
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error general actualizando contraseña: $e');
+
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error actualizando contraseña');
+
+      throw Exception('Error al actualizar la contraseña.');
+    }
+  }
+
+  /// NUEVO: Reautentica al usuario con su contraseña actual
+  @override
+  Future<void> reauthenticateWithPassword(String currentPassword) async {
+    try {
+      debugPrint('🔐 Reautenticando usuario');
+
+      final User? currentUser = _firebaseAuth.currentUser;
+      if (currentUser == null || currentUser.email == null) {
+        throw Exception('No hay usuario autenticado');
+      }
+
+      // Verificar conectividad
+      await _verifyConnectivity();
+
+      // Crear credencial con email y contraseña actual
+      final credential = EmailAuthProvider.credential(
+        email: currentUser.email!,
+        password: currentPassword,
+      );
+
+      // Reautenticar
+      await currentUser
+          .reauthenticateWithCredential(credential)
+          .timeout(_authTimeout);
+
+      debugPrint('✅ Reautenticación exitosa');
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException en reautenticación: ${e.code}');
+
+      // Registrar error
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error en reautenticación: ${e.code}');
+
+      // Manejar errores específicos
+      switch (e.code) {
+        case 'wrong-password':
+          throw Exception('La contraseña actual es incorrecta.');
+        case 'user-mismatch':
+          throw Exception('Error de autenticación. Intenta nuevamente.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        case 'too-many-requests':
+          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
+        default:
+          throw Exception('Error de autenticación: ${e.message}');
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error general en reautenticación: $e');
+
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error en reautenticación');
+
+      throw Exception('Error al verificar la contraseña actual.');
+    }
+  }
+
+  /// Actualizar el método existente signInWithEmailPassword para incluir @override
+  @override
+  Future<UserModel> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      debugPrint('🔐 Iniciando sesión con email: $email');
+
+      // Iniciar sesión con Firebase Auth
+      final userCredential = await _firebaseAuth
+          .signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          )
+          .timeout(_authTimeout);
+
+      final User? firebaseUser = userCredential.user;
+
+      if (firebaseUser == null) {
+        throw Exception('No se pudo iniciar sesión con email/contraseña');
+      }
+
+      debugPrint('✅ Autenticación exitosa con email');
+
+      // Verificar si el usuario existe en Firestore
+      final userDoc = await _firestore
+          .collection(_usersCollection)
+          .doc(firebaseUser.uid)
+          .get()
+          .timeout(_firestoreTimeout);
+
+      if (userDoc.exists) {
+        // Si existe, actualizar última conexión
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .update({
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+
+        final userModel = UserModel.fromFirestore(userDoc);
+
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, userModel);
+
+        // Actualizar datos en Crashlytics
+        _updateCrashlyticsUserData(userModel);
+
+        return userModel;
+      } else {
+        // Si no existe, crear nuevo usuario
+        final newUser = UserModel.newUser(
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName ?? email.split('@')[0],
+          email: firebaseUser.email ?? email,
+          photoUrl: firebaseUser.photoURL,
+        );
+
+        // Guardar en Firestore
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .set({
+          ...newUser.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, newUser);
+
+        // Actualizar datos en Crashlytics
+        _updateCrashlyticsUserData(newUser);
+
+        return newUser;
+      }
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException en email login: ${e.code}');
+
+      // Registrar error específico de Firebase Auth
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error en inicio de sesión con email: ${e.code}');
+
+      // Manejar errores específicos
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('No se encontró un usuario con ese email.');
+        case 'wrong-password':
+          throw Exception('Contraseña incorrecta.');
+        case 'user-disabled':
+          throw Exception('Esta cuenta ha sido deshabilitada.');
+        case 'invalid-email':
+          throw Exception('El email ingresado no es válido.');
+        case 'too-many-requests':
+          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        default:
+          throw Exception('Error de autenticación: ${e.message}');
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error general en email login: $e');
+
+      // Registrar otros errores
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error en inicio de sesión con email/contraseña');
+      throw Exception('Error al iniciar sesión con email/contraseña');
+    }
+  }
+
   @override
   Future<UserModel?> getCurrentUser() async {
     final User? firebaseUser = _firebaseAuth.currentUser;
@@ -450,116 +814,6 @@ class FirebaseAuthRepository implements AuthRepository {
       }
       // Si es otro tipo de error, continuar (puede ser que el documento test no exista)
       debugPrint('⚠️ Verificación de conectividad falló, continuando...');
-    }
-  }
-
-  /// Método para inicio de sesión con email y contraseña
-  Future<UserModel> signInWithEmailPassword({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      debugPrint('🔐 Iniciando sesión con email: $email');
-
-      // Iniciar sesión con Firebase Auth
-      final userCredential = await _firebaseAuth
-          .signInWithEmailAndPassword(
-            email: email.trim(),
-            password: password,
-          )
-          .timeout(_authTimeout);
-
-      final User? firebaseUser = userCredential.user;
-
-      if (firebaseUser == null) {
-        throw Exception('No se pudo iniciar sesión con email/contraseña');
-      }
-
-      debugPrint('✅ Autenticación exitosa con email');
-
-      // Verificar si el usuario existe en Firestore
-      final userDoc = await _firestore
-          .collection(_usersCollection)
-          .doc(firebaseUser.uid)
-          .get()
-          .timeout(_firestoreTimeout);
-
-      if (userDoc.exists) {
-        // Si existe, actualizar última conexión
-        await _firestore
-            .collection(_usersCollection)
-            .doc(firebaseUser.uid)
-            .update({
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
-
-        final userModel = UserModel.fromFirestore(userDoc);
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, userModel);
-
-        // Actualizar datos en Crashlytics
-        _updateCrashlyticsUserData(userModel);
-
-        return userModel;
-      } else {
-        // Si no existe, crear nuevo usuario
-        final newUser = UserModel.newUser(
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? email.split('@')[0],
-          email: firebaseUser.email ?? email,
-          photoUrl: firebaseUser.photoURL,
-        );
-
-        // Guardar en Firestore
-        await _firestore
-            .collection(_usersCollection)
-            .doc(firebaseUser.uid)
-            .set({
-          ...newUser.toMap(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, newUser);
-
-        // Actualizar datos en Crashlytics
-        _updateCrashlyticsUserData(newUser);
-
-        return newUser;
-      }
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException en email login: ${e.code}');
-
-      // Registrar error específico de Firebase Auth
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en inicio de sesión con email: ${e.code}');
-
-      // Manejar errores específicos
-      switch (e.code) {
-        case 'user-not-found':
-          throw Exception('No se encontró un usuario con ese email.');
-        case 'wrong-password':
-          throw Exception('Contraseña incorrecta.');
-        case 'user-disabled':
-          throw Exception('Esta cuenta ha sido deshabilitada.');
-        case 'invalid-email':
-          throw Exception('El email ingresado no es válido.');
-        case 'too-many-requests':
-          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
-        case 'network-request-failed':
-          throw Exception('Error de conexión. Verifica tu internet.');
-        default:
-          throw Exception('Error de autenticación: ${e.message}');
-      }
-    } catch (e, stack) {
-      debugPrint('❌ Error general en email login: $e');
-
-      // Registrar otros errores
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en inicio de sesión con email/contraseña');
-      throw Exception('Error al iniciar sesión con email/contraseña');
     }
   }
 

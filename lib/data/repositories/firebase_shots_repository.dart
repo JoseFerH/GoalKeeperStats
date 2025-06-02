@@ -8,12 +8,13 @@ import 'package:goalkeeper_stats/data/models/shot_model.dart';
 import 'package:goalkeeper_stats/data/models/user_model.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/daily_limits_service.dart';
+import 'package:goalkeeper_stats/core/constants/app_constants.dart';
 
 class FirebaseShotsRepository implements ShotsRepository {
   final FirebaseFirestore _firestore;
   final AuthRepository _authRepository;
   final CacheManager _cacheManager;
-  final DailyLimitsService _dailyLimitsService; // NUEVO: Servicio de límites
+  final DailyLimitsService _dailyLimitsService;
 
   // Colección donde se almacenan los tiros
   static const String _shotsCollection = 'shots';
@@ -28,19 +29,16 @@ class FirebaseShotsRepository implements ShotsRepository {
   static const int _cacheDuration = 300; // 5 minutos
 
   /// Constructor con posibilidad de inyección para pruebas
-  /// Constructor correcto con authRepository requerido
   FirebaseShotsRepository({
     FirebaseFirestore? firestore,
     required AuthRepository authRepository,
     CacheManager? cacheManager,
-    DailyLimitsService? dailyLimitsService, // NUEVO parámetro
+    DailyLimitsService? dailyLimitsService,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _authRepository = authRepository,
         _cacheManager = cacheManager ?? CacheManager(),
-        _dailyLimitsService =
-            dailyLimitsService ?? DailyLimitsService(); // NUEVO inicialización
+        _dailyLimitsService = dailyLimitsService ?? DailyLimitsService();
 
-  /// Método correcto que usa el parámetro userId
   @override
   Future<List<ShotModel>> getShotsByUser(String userId) async {
     try {
@@ -72,7 +70,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return shots;
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por usuario');
+          reason: 'Error al obtener tiros por usuario: userId=$userId');
       throw Exception('Error al obtener la lista de tiros');
     }
   }
@@ -88,15 +86,44 @@ class FirebaseShotsRepository implements ShotsRepository {
         return cachedShots;
       }
 
-      // Si no hay caché, consultar a Firestore
-      final snapshot = await _firestore
-          .collection(_shotsCollection)
-          .where('matchId', isEqualTo: matchId)
-          .orderBy('minute', descending: false)
-          .get();
+      List<ShotModel> shots;
 
-      final shots =
-          snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
+      try {
+        // INTENTO 1: Consulta con orderBy (requiere índice compuesto)
+        final snapshot = await _firestore
+            .collection(_shotsCollection)
+            .where('matchId', isEqualTo: matchId)
+            .orderBy('minute', descending: false)
+            .get();
+
+        shots =
+            snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
+      } catch (e) {
+        if (e.toString().toLowerCase().contains('index') ||
+            e.toString().toLowerCase().contains('requires an index')) {
+          // FALLBACK: Si falla por índice, usar consulta simple y ordenar en memoria
+          print(
+              '⚠️ Índice no disponible para matchId + minute, ordenando en memoria...');
+
+          final snapshot = await _firestore
+              .collection(_shotsCollection)
+              .where('matchId', isEqualTo: matchId)
+              .get();
+
+          shots =
+              snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
+
+          // Ordenar en memoria por minute
+          shots.sort((a, b) {
+            final minuteA = a.minute ?? 0;
+            final minuteB = b.minute ?? 0;
+            return minuteA.compareTo(minuteB);
+          });
+        } else {
+          // Re-lanzar otros errores
+          rethrow;
+        }
+      }
 
       // Guardar en caché
       await _cacheManager.set(cacheKey, shots, duration: _cacheDuration);
@@ -104,15 +131,23 @@ class FirebaseShotsRepository implements ShotsRepository {
       return shots;
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por partido');
-      throw Exception('Error al obtener los tiros del partido');
+          reason: 'Error al obtener tiros por partido: matchId=$matchId');
+
+      // Manejo específico de errores
+      if (e.toString().toLowerCase().contains('permission')) {
+        throw Exception('No tienes permisos para acceder a estos datos');
+      } else if (e.toString().toLowerCase().contains('network') ||
+          e.toString().toLowerCase().contains('unavailable')) {
+        throw Exception('Error de conexión. Verifica tu internet');
+      } else {
+        throw Exception('Error al obtener los tiros del partido');
+      }
     }
   }
 
   @override
   Future<ShotModel?> getShotById(String id) async {
     try {
-      // No cacheamos tiros individuales para asegurar datos frescos
       final doc = await _firestore.collection(_shotsCollection).doc(id).get();
 
       if (!doc.exists) {
@@ -122,7 +157,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return ShotModel.fromFirestore(doc);
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiro por ID');
+          reason: 'Error al obtener tiro por ID: id=$id');
       throw Exception('Error al obtener el tiro');
     }
   }
@@ -130,7 +165,7 @@ class FirebaseShotsRepository implements ShotsRepository {
   @override
   Future<ShotModel> createShot(ShotModel shot) async {
     try {
-      // CORREGIDO: Verificar límites usando el servicio centralizado
+      // Verificar límites usando el servicio centralizado
       final currentUser = await _authRepository.getCurrentUser();
       if (currentUser == null) {
         throw Exception('Usuario no autenticado');
@@ -139,18 +174,16 @@ class FirebaseShotsRepository implements ShotsRepository {
       // Usar servicio centralizado para verificar límites
       if (!await _dailyLimitsService.canCreateShot(currentUser)) {
         throw Exception(
-            'Has alcanzado el límite diario de tiros para la versión gratuita');
+            'Has alcanzado el límite diario de ${AppConstants.freeTierDailyShotsLimit} tiros para la versión gratuita');
       }
 
       // Crear referencia para el nuevo documento
       final docRef = _firestore.collection(_shotsCollection).doc();
 
-      // Preparar datos para guardar - IMPORTANTE: Usar timestamp UTC
+      // Preparar datos para guardar
       final data = {
         ...shot.toMap(),
-        'timestamp': shot.timestamp
-            .toUtc()
-            .millisecondsSinceEpoch, // CORREGIDO: Forzar UTC
+        'timestamp': shot.timestamp.toUtc().millisecondsSinceEpoch,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -160,7 +193,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       // Obtener el documento recién creado
       final newDoc = await docRef.get();
 
-      // IMPORTANTE: Invalidar caché del servicio de límites
+      // Invalidar caché del servicio de límites
       await _dailyLimitsService.invalidateTodayCache(shot.userId);
 
       // Invalidar caché relevante del repositorio
@@ -172,8 +205,8 @@ class FirebaseShotsRepository implements ShotsRepository {
       // Retornar modelo con el ID asignado
       return ShotModel.fromFirestore(newDoc);
     } catch (e) {
-      FirebaseCrashlytics.instance
-          .recordError(e, StackTrace.current, reason: 'Error al crear tiro');
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+          reason: 'Error al crear tiro para usuario: ${shot.userId}');
 
       if (e is Exception) {
         throw e;
@@ -209,7 +242,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return ShotModel.fromFirestore(updatedDoc);
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al actualizar tiro');
+          reason: 'Error al actualizar tiro: id=${shot.id}');
       throw Exception('Error al actualizar el tiro');
     }
   }
@@ -228,10 +261,13 @@ class FirebaseShotsRepository implements ShotsRepository {
         if (shot.matchId != null) {
           await _cacheManager.remove('$_matchShotsCachePrefix${shot.matchId}');
         }
+
+        // Invalidar caché de límites diarios
+        await _dailyLimitsService.invalidateTodayCache(shot.userId);
       }
     } catch (e) {
-      FirebaseCrashlytics.instance
-          .recordError(e, StackTrace.current, reason: 'Error al eliminar tiro');
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
+          reason: 'Error al eliminar tiro: id=$id');
       throw Exception('Error al eliminar el tiro');
     }
   }
@@ -239,7 +275,6 @@ class FirebaseShotsRepository implements ShotsRepository {
   @override
   Future<List<ShotModel>> getShotsByResult(String userId, String result) async {
     try {
-      // Esta consulta específica no la cacheamos ya que no es de uso frecuente
       final snapshot = await _firestore
           .collection(_shotsCollection)
           .where('userId', isEqualTo: userId)
@@ -250,40 +285,41 @@ class FirebaseShotsRepository implements ShotsRepository {
       return snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por resultado');
+          reason:
+              'Error al obtener tiros por resultado: userId=$userId, result=$result');
       throw Exception('Error al obtener tiros por resultado');
     }
   }
 
   @override
   Future<List<ShotModel>> getShotsByDateRange(
-      String userId, DateTime startDate, DateTime endDate,
-      {int? limit}) async {
+      String userId, DateTime startDate, DateTime endDate) async {
     try {
       // Clave de caché única para este rango de fechas
       final cacheKey =
-          '${_userShotsCachePrefix}${userId}_${startDate.millisecondsSinceEpoch}_${endDate.millisecondsSinceEpoch}${limit != null ? '_limit$limit' : ''}';
+          '${_userShotsCachePrefix}${userId}_${startDate.millisecondsSinceEpoch}_${endDate.millisecondsSinceEpoch}';
       final cachedShots = await _cacheManager.get<List<ShotModel>>(cacheKey);
 
       if (cachedShots != null) {
         return cachedShots;
       }
 
+      // Convertir fechas a UTC para consistencia
+      final startUtc = startDate.toUtc();
+      final endUtc = endDate.toUtc();
+
       final snapshot = await _firestore
           .collection(_shotsCollection)
           .where('userId', isEqualTo: userId)
-          .where('timestamp', isGreaterThanOrEqualTo: startDate)
-          .where('timestamp', isLessThanOrEqualTo: endDate)
+          .where('timestamp',
+              isGreaterThanOrEqualTo: startUtc.millisecondsSinceEpoch)
+          .where('timestamp',
+              isLessThanOrEqualTo: endUtc.millisecondsSinceEpoch)
           .orderBy('timestamp', descending: true)
           .get();
 
-      List<ShotModel> shots =
+      final shots =
           snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
-
-      // Aplicar límite si se proporciona
-      if (limit != null && shots.length > limit) {
-        shots = shots.sublist(0, limit);
-      }
 
       // Cachear por menos tiempo ya que es una consulta específica
       await _cacheManager.set(cacheKey, shots, duration: 60); // 1 minuto
@@ -291,7 +327,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return shots;
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener tiros por rango de fechas');
+          reason: 'Error al obtener tiros por rango de fechas: userId=$userId');
       throw Exception('Error al obtener tiros por rango de fechas');
     }
   }
@@ -314,8 +350,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return shots;
     }).handleError((e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error en stream de tiros de usuario');
-      // No lanzamos excepción ya que los streams deberían manejar errores internamente
+          reason: 'Error en stream de tiros de usuario: userId=$userId');
       return <ShotModel>[];
     });
   }
@@ -325,11 +360,17 @@ class FirebaseShotsRepository implements ShotsRepository {
     return _firestore
         .collection(_shotsCollection)
         .where('matchId', isEqualTo: matchId)
-        .orderBy('minute', descending: false)
-        .snapshots()
+        .snapshots() // Remover orderBy para evitar error de índice
         .map((snapshot) {
       final shots =
           snapshot.docs.map((doc) => ShotModel.fromFirestore(doc)).toList();
+
+      // Ordenar en memoria por minute
+      shots.sort((a, b) {
+        final minuteA = a.minute ?? 0;
+        final minuteB = b.minute ?? 0;
+        return minuteA.compareTo(minuteB);
+      });
 
       // Actualizar caché cada vez que hay cambios
       _cacheManager.set('$_matchShotsCachePrefix$matchId', shots,
@@ -338,7 +379,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return shots;
     }).handleError((e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error en stream de tiros de partido');
+          reason: 'Error en stream de tiros de partido: matchId=$matchId');
       return <ShotModel>[];
     });
   }
@@ -360,17 +401,24 @@ class FirebaseShotsRepository implements ShotsRepository {
       final shots = await getShotsByUser(userId);
 
       // Inicializar el mapa de resultados con las zonas
-      final Map<String, Map<String, int>> zoneStats = {
-        'top-left': {'total': 0, 'saved': 0, 'goal': 0},
-        'top-center': {'total': 0, 'saved': 0, 'goal': 0},
-        'top-right': {'total': 0, 'saved': 0, 'goal': 0},
-        'middle-left': {'total': 0, 'saved': 0, 'goal': 0},
-        'middle-center': {'total': 0, 'saved': 0, 'goal': 0},
-        'middle-right': {'total': 0, 'saved': 0, 'goal': 0},
-        'bottom-left': {'total': 0, 'saved': 0, 'goal': 0},
-        'bottom-center': {'total': 0, 'saved': 0, 'goal': 0},
-        'bottom-right': {'total': 0, 'saved': 0, 'goal': 0},
-      };
+      final Map<String, Map<String, int>> zoneStats = {};
+
+      // Inicializar todas las zonas posibles
+      const zones = [
+        'top-left',
+        'top-center',
+        'top-right',
+        'middle-left',
+        'middle-center',
+        'middle-right',
+        'bottom-left',
+        'bottom-center',
+        'bottom-right',
+      ];
+
+      for (final zone in zones) {
+        zoneStats[zone] = {'total': 0, 'saved': 0, 'goal': 0};
+      }
 
       // Analizar cada tiro
       for (final shot in shots) {
@@ -398,7 +446,7 @@ class FirebaseShotsRepository implements ShotsRepository {
       return zoneStats;
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al obtener estadísticas por zona');
+          reason: 'Error al obtener estadísticas por zona: userId=$userId');
       throw Exception('Error al calcular estadísticas por zona');
     }
   }
@@ -436,42 +484,12 @@ class FirebaseShotsRepository implements ShotsRepository {
       return counts;
     } catch (e) {
       FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al contar tiros por resultado');
+          reason: 'Error al contar tiros por resultado: userId=$userId');
       throw Exception('Error al contar tiros por resultado');
     }
   }
 
   // Métodos privados de utilidad
-
-  /// Verifica si un usuario puede crear más tiros (límite diario para usuarios gratuitos)
-  Future<bool> _canCreateShot(String userId) async {
-    try {
-      // Obtener usuario actual para verificar si es premium
-      final currentUser = await _authRepository.getCurrentUser();
-
-      // Si es premium, puede crear tiros sin limitación
-      if (currentUser != null && currentUser.subscription.isPremium) {
-        return true;
-      }
-
-      // Si es usuario gratuito, verificar el límite diario
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
-
-      final todayShots =
-          await getShotsByDateRange(userId, startOfDay, endOfDay);
-
-      // Límite de 20 tiros por día para usuarios gratuitos
-      return todayShots.length < 20;
-    } catch (e) {
-      // En caso de error, permitir crear el tiro (enfocar en UX)
-      // pero registrar el problema
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current,
-          reason: 'Error al verificar límite de tiros');
-      return true;
-    }
-  }
 
   /// Invalida todas las cachés relacionadas con un usuario
   Future<void> _invalidateUserCache(String userId) async {

@@ -307,7 +307,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
 
       // Actualizar el usuario usando el BLoC
-      authBloc.add(UpdateUserEvent(updatedUser));
+      // ✅ CORRECTO:
+      context.read<AuthBloc>().add(UpdateUserEvent(user: updatedUser));
 
       // Mostrar mensaje de éxito y regresar con el usuario actualizado
       ScaffoldMessenger.of(context).showSnackBar(

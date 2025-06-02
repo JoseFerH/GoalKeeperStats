@@ -22,7 +22,8 @@ import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/services/connectivity_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
-import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Servicio de límites
+import 'package:goalkeeper_stats/services/daily_limits_service.dart';
+import 'package:goalkeeper_stats/services/ad_service.dart'; // NUEVO: Servicio de anuncios
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 enum StorageMode {
@@ -54,7 +55,8 @@ class DependencyInjection {
   ConnectivityService? _connectivityService;
   AnalyticsService? _analyticsService;
   FirebaseCrashlyticsService? _crashlyticsService;
-  DailyLimitsService? _dailyLimitsService; // NUEVO: Servicio de límites
+  DailyLimitsService? _dailyLimitsService;
+  AdService? _adService; // NUEVO: Servicio de anuncios
 
   // Inicialización de servicios
   Future<void> _initializeServices() async {
@@ -65,11 +67,15 @@ class DependencyInjection {
     _analyticsService = AnalyticsService();
     _crashlyticsService = FirebaseCrashlyticsService();
 
-    // NUEVO: Inicializar servicio de límites diarios
+    // Inicializar servicio de límites diarios
     _dailyLimitsService = DailyLimitsService(
       cacheManager: _cacheManager,
       crashlyticsService: _crashlyticsService,
     );
+
+    // NUEVO: Inicializar servicio de anuncios
+    _adService = AdService();
+    // La inicialización del AdService se hace de forma asíncrona en main.dart
   }
 
   // Reiniciar todas las instancias cuando cambie el modo
@@ -78,8 +84,9 @@ class DependencyInjection {
     _shotsRepository = null;
     _matchesRepository = null;
     _passesRepository = null;
-    // NUEVO: También resetear servicio de límites si cambia el modo
     _dailyLimitsService = null;
+    // NUEVO: También resetear servicio de anuncios si cambia el modo
+    _adService = null;
   }
 
   // Getters para los repositorios con lazy initialization
@@ -88,7 +95,6 @@ class DependencyInjection {
     return _authRepository!;
   }
 
-  // CORREGIDO: ShotsRepository ahora incluye DailyLimitsService
   ShotsRepository get shotsRepository {
     _shotsRepository ??= _createShotsRepository();
     return _shotsRepository!;
@@ -125,7 +131,6 @@ class DependencyInjection {
     return _crashlyticsService!;
   }
 
-  // NUEVO: Getter para servicio de límites diarios
   DailyLimitsService get dailyLimitsService {
     if (_dailyLimitsService == null) {
       _dailyLimitsService = DailyLimitsService(
@@ -134,6 +139,12 @@ class DependencyInjection {
       );
     }
     return _dailyLimitsService!;
+  }
+
+  // NUEVO: Getter para servicio de anuncios
+  AdService get adService {
+    _adService ??= AdService();
+    return _adService!;
   }
 
   // Crashlytics
@@ -146,7 +157,6 @@ class DependencyInjection {
         : FirebaseAuthRepository();
   }
 
-  // CORREGIDO: Incluir DailyLimitsService en ShotsRepository
   ShotsRepository _createShotsRepository() {
     if (_currentMode == StorageMode.local) {
       return LocalShotsRepository();
@@ -154,7 +164,7 @@ class DependencyInjection {
       return FirebaseShotsRepository(
         authRepository: authRepository,
         cacheManager: cacheManager,
-        dailyLimitsService: dailyLimitsService, // NUEVO parámetro
+        dailyLimitsService: dailyLimitsService,
       );
     }
   }
@@ -194,27 +204,40 @@ class DependencyInjection {
   // Verificar si Firebase está disponible
   Future<bool> isFirebaseAvailable() async {
     try {
-      // Aquí podríamos hacer una verificación simple de Firebase
       return _currentMode == StorageMode.firebase;
     } catch (e) {
       return false;
     }
   }
 
-  // NUEVO: Método para limpiar recursos
+  // NUEVO: Método para inicializar AdService de forma asíncrona
+  Future<bool> initializeAdService() async {
+    try {
+      return await adService.initialize();
+    } catch (e) {
+      crashlyticsService.recordError(
+        e,
+        StackTrace.current,
+        reason: 'Error inicializando AdService desde DependencyInjection',
+      );
+      return false;
+    }
+  }
+
+  // Método para limpiar recursos
   void dispose() {
     _connectivityService?.dispose();
     _crashlyticsService?.dispose();
-    // El resto de servicios se limpiarán automáticamente
+    _adService?.dispose(); // NUEVO: Limpiar recursos del AdService
   }
 
-  // NUEVO: Método para reinicializar todos los servicios (útil para testing)
+  // Método para reinicializar todos los servicios (útil para testing)
   Future<void> reinitialize() async {
     _resetRepositories();
     await _initializeServices();
   }
 
-  // NUEVO: Método para obtener información de debug
+  // ACTUALIZADO: Método para obtener información de debug
   Map<String, dynamic> getDebugInfo() {
     return {
       'storageMode': _currentMode.toString(),
@@ -228,8 +251,35 @@ class DependencyInjection {
         'analyticsService': _analyticsService != null,
         'crashlyticsService': _crashlyticsService != null,
         'dailyLimitsService': _dailyLimitsService != null,
+        'adService': _adService != null, // NUEVO: Info del AdService
       },
+      // NUEVO: Información específica del AdService
+      'adServiceInfo': _adService?.getDebugInfo(),
     };
+  }
+
+  // NUEVO: Método para actualizar el usuario en servicios que lo necesiten
+  void updateUserInServices(dynamic user) {
+    _adService?.updateUser(user);
+    // Aquí podrías actualizar otros servicios que necesiten info del usuario
+  }
+
+  // NUEVO: Método para gestionar acciones que pueden disparar anuncios
+  void recordUserAction(String actionType) {
+    _adService?.incrementActionCount();
+
+    // Registrar en analytics
+    _analyticsService?.logEvent(
+      name: 'user_action',
+      parameters: {'action_type': actionType},
+    );
+  }
+
+  // NUEVO: Método para precargar anuncios (útil en momentos de inactividad)
+  Future<void> preloadAds() async {
+    if (_adService?.shouldShowAds == true) {
+      await _adService?.preloadAllAds();
+    }
   }
 }
 

@@ -5,91 +5,106 @@ import 'package:goalkeeper_stats/data/models/subscription_info.dart';
 
 /// Eventos base para el AuthBloc
 abstract class AuthEvent extends Equatable {
-  const AuthEvent();
-
   @override
   List<Object?> get props => [];
 }
 
-/// Evento para verificar el estado de autenticación
+/// Verificar estado de autenticación al iniciar la app
 class CheckAuthStatusEvent extends AuthEvent {}
 
-/// Evento para iniciar sesión con Google
+/// Iniciar sesión con Google
 class SignInWithGoogleEvent extends AuthEvent {}
 
-/// Evento para iniciar sesión con email y contraseña
+/// Iniciar sesión con email y contraseña
 class SignInWithEmailPasswordEvent extends AuthEvent {
   final String email;
   final String password;
 
-  const SignInWithEmailPasswordEvent({
+  SignInWithEmailPasswordEvent({
     required this.email,
     required this.password,
   });
 
   @override
-  List<Object?> get props => [email, password];
+  List<Object> get props => [email, password];
 }
 
-/// Evento para cerrar sesión
+/// Registrar nuevo usuario con email y contraseña
+class RegisterWithEmailPasswordEvent extends AuthEvent {
+  final String email;
+  final String password;
+  final String displayName;
+
+  RegisterWithEmailPasswordEvent({
+    required this.email,
+    required this.password,
+    required this.displayName,
+  });
+
+  @override
+  List<Object> get props => [email, password, displayName];
+}
+
+/// Enviar email de recuperación de contraseña
+class SendPasswordResetEvent extends AuthEvent {
+  final String email;
+
+  SendPasswordResetEvent({required this.email});
+
+  @override
+  List<Object> get props => [email];
+}
+
+/// Actualizar contraseña del usuario
+class UpdatePasswordEvent extends AuthEvent {
+  final String currentPassword;
+  final String newPassword;
+
+  UpdatePasswordEvent({
+    required this.currentPassword,
+    required this.newPassword,
+  });
+
+  @override
+  List<Object> get props => [currentPassword, newPassword];
+}
+
+/// Cerrar sesión
 class SignOutEvent extends AuthEvent {}
 
-/// Evento para actualizar el perfil del usuario
+/// Actualizar datos del usuario
 class UpdateUserEvent extends AuthEvent {
   final UserModel user;
 
-  const UpdateUserEvent(this.user);
+  UpdateUserEvent({required this.user});
 
   @override
-  List<Object?> get props => [user];
+  List<Object> get props => [user];
 }
 
-/// Evento para actualizar las configuraciones del usuario
+/// Actualizar configuraciones del usuario
 class UpdateUserSettingsEvent extends AuthEvent {
-  final String userId;
   final UserSettings settings;
   final bool allowOffline;
 
-  const UpdateUserSettingsEvent({
-    required this.userId,
+  UpdateUserSettingsEvent({
     required this.settings,
     this.allowOffline = false,
   });
 
   @override
-  List<Object?> get props => [userId, settings, allowOffline];
+  List<Object> get props => [settings, allowOffline];
 }
 
-/// Evento para actualizar la suscripción del usuario
+/// Actualizar suscripción del usuario
 class UpdateSubscriptionEvent extends AuthEvent {
-  final String userId;
   final SubscriptionInfo subscription;
 
-  const UpdateSubscriptionEvent({
-    required this.userId,
-    required this.subscription,
-  });
+  UpdateSubscriptionEvent({required this.subscription});
 
   @override
-  List<Object?> get props => [userId, subscription];
+  List<Object> get props => [subscription];
 }
 
-/// Evento para eliminar la cuenta del usuario
-class DeleteAccountEvent extends AuthEvent {
-  final String userId;
-
-  const DeleteAccountEvent(this.userId);
-
-  @override
-  List<Object?> get props => [userId];
-}
-
-/// Evento para verificar el estado de la suscripción
-class VerifySubscriptionEvent extends AuthEvent {
-  final String userId;
-
-  const VerifySubscriptionEvent(this.userId);
-
-  @override
-  List<Object?> get props => [userId];
-}
+/// Verificar estado de suscripción con el servidor
+class VerifySubscriptionEvent extends AuthEvent {}
