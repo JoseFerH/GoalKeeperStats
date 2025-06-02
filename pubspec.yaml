@@ -19,11 +19,13 @@ dependencies:
 
   # Firebase y backend
   firebase_core: ^2.24.2
-  firebase_auth: ^4.15.3
+  firebase_auth: 4.15.3        # Versión específica que funciona
   cloud_firestore: ^4.13.6
   firebase_analytics: ^10.7.4
   firebase_crashlytics: ^3.4.9
-  google_sign_in: ^6.1.6
+  firebase_ui_auth: ^1.9.0           # 🆕 NUEVA - maneja toda la autenticación
+  firebase_ui_oauth_google: ^1.2.14  # 🆕 NUEVA - Google OAuth
+  google_sign_in: 6.1.6        # Versión específica compatible
 
   # UI y visualización
   fl_chart: ^0.66.0
@@ -52,7 +54,7 @@ dependencies:
   in_app_purchase_storekit: ^0.3.6+7
 
   # NUEVO: Anuncios de Google AdMob
-  google_mobile_ads: ^4.0.0
+  # google_mobile_ads: ^4.0.0
 
 dev_dependencies:
   flutter_test:
@@ -68,9 +70,9 @@ flutter:
   uses-material-design: true
   
   # NUEVO: Configuración de assets para anuncios
-  assets:
-    - assets/images/
-    - assets/icons/
+  # assets:
+  #   - assets/images/
+  #   - assets/icons/
     # Añadir assets específicos para anuncios si los tienes
     # - assets/ads/
   

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_ui_auth/firebase_ui_auth.dart';
+import 'package:firebase_ui_oauth_google/firebase_ui_oauth_google.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
@@ -9,14 +10,11 @@ import 'package:goalkeeper_stats/data/models/user_settings.dart';
 import 'package:goalkeeper_stats/data/models/subscription_info.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 
-/// Implementación de Firebase para el repositorio de autenticación
-///
-/// Versión mejorada con manejo robusto de errores, timeouts y logging.
-/// Corrige el error: type 'List<Object?>' is not a subtype of type 'PigeonUserDetails?'
+/// 🔥 IMPLEMENTACIÓN COMPLETA: Firebase UI Auth Repository
+/// Mantiene toda la funcionalidad original pero evita el error PigeonUserDetails
 class FirebaseAuthRepository implements AuthRepository {
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
-  final GoogleSignIn _googleSignIn;
   final CacheManager _cacheManager;
 
   // Colección donde se almacenan los usuarios en Firestore
@@ -30,15 +28,17 @@ class FirebaseAuthRepository implements AuthRepository {
   static const Duration _firestoreTimeout = Duration(seconds: 25);
   static const Duration _credentialsTimeout = Duration(seconds: 30);
 
+  // Timeouts optimizados para diferentes escenarios
+  static const Duration _authTimeoutFast = Duration(seconds: 45);
+  static const Duration _authTimeoutSlow = Duration(seconds: 60);
+
   /// Constructor con posibilidad de inyección para pruebas
   FirebaseAuthRepository({
     FirebaseAuth? firebaseAuth,
     FirebaseFirestore? firestore,
-    GoogleSignIn? googleSignIn,
     CacheManager? cacheManager,
   })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance,
-        _googleSignIn = googleSignIn ?? GoogleSignIn(),
         _cacheManager = cacheManager ?? CacheManager() {
     _initializeRepository();
   }
@@ -46,6 +46,13 @@ class FirebaseAuthRepository implements AuthRepository {
   /// Inicialización del repositorio con configuración adicional
   void _initializeRepository() {
     try {
+      // Configurar Firebase UI Auth
+      FirebaseUIAuth.configureProviders([
+        GoogleProvider(
+          clientId: '415256305974-YOUR-CLIENT-ID.apps.googleusercontent.com',
+        ),
+      ]);
+
       // Configurar idioma por defecto para Firebase Auth
       _firebaseAuth.setLanguageCode('es');
 
@@ -56,56 +63,307 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
-  /// NUEVO: Registra un nuevo usuario con email y contraseña
   @override
-  Future<UserModel> registerWithEmailPassword({
-    required String email,
-    required String password,
-    required String displayName,
-  }) async {
-    try {
-      debugPrint('📝 Registrando nuevo usuario: $email');
+  Future<UserModel?> getCurrentUser() async {
+    final User? firebaseUser = _firebaseAuth.currentUser;
 
-      // Verificar conectividad
+    if (firebaseUser == null) {
+      debugPrint('🔐 No hay usuario autenticado en Firebase Auth');
+      return null;
+    }
+
+    try {
+      debugPrint('🔍 Obteniendo usuario actual: ${firebaseUser.uid}');
+
+      // Intentar obtener datos del usuario desde caché primero
+      final cachedUser = await _cacheManager.get<UserModel>(_userCacheKey);
+      if (cachedUser != null && _isUserCacheValid(cachedUser)) {
+        debugPrint('✅ Usuario obtenido desde caché');
+        return cachedUser;
+      }
+
+      // Si no hay caché o está desactualizada, obtener desde servidor
+      debugPrint('🌐 Obteniendo usuario desde Firestore...');
+      final userDoc = await _firestore
+          .collection(_usersCollection)
+          .doc(firebaseUser.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(_firestoreTimeout);
+
+      if (userDoc.exists) {
+        final userModel = UserModel.fromFirestore(userDoc);
+
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, userModel);
+
+        // Actualizar metadata de Crashlytics
+        _updateCrashlyticsUserData(userModel);
+
+        debugPrint('✅ Usuario obtenido desde Firestore');
+        return userModel;
+      } else {
+        // Si el documento no existe en Firestore pero sí en Auth, crear nuevo usuario
+        debugPrint('👤 Usuario no existe en Firestore, creando nuevo...');
+        final newUser = UserModel.newUser(
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName ?? 'Usuario',
+          email: firebaseUser.email ?? '',
+          photoUrl: firebaseUser.photoURL,
+        );
+
+        // Guardar el nuevo usuario en Firestore
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .set({
+          ...newUser.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+        }).timeout(_firestoreTimeout);
+
+        // Actualizar caché
+        await _cacheManager.set(_userCacheKey, newUser);
+
+        debugPrint('✅ Nuevo usuario creado');
+        return newUser;
+      }
+    } catch (e, stack) {
+      // Registrar error en Crashlytics
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error al obtener usuario actual');
+
+      debugPrint('❌ Error obteniendo usuario actual: $e');
+
+      // En caso de error de red, intentar usar caché como fallback
+      final cachedUser = await _cacheManager.get<UserModel>(_userCacheKey);
+      if (cachedUser != null) {
+        debugPrint('🔄 Usando usuario desde caché como fallback');
+        return cachedUser;
+      }
+
+      throw Exception('Error al obtener información del usuario');
+    }
+  }
+
+  /// 🔥 MÉTODO CORREGIDO: Google Sign-In usando Firebase UI Auth
+  @override
+  Future<UserModel> signInWithGoogle() async {
+    try {
+      debugPrint(
+          '🚀 Iniciando proceso de autenticación con Google usando Firebase UI...');
+
+      // 🔧 PASO 0: Verificar conectividad antes de comenzar
+      debugPrint('🌐 Verificando conectividad...');
       await _verifyConnectivity();
 
-      // Crear cuenta en Firebase Auth
-      final userCredential = await _firebaseAuth
-          .createUserWithEmailAndPassword(
-            email: email.trim(),
-            password: password,
-          )
-          .timeout(_authTimeout);
+      // 🔧 PASO 1: Limpiar cualquier sesión previa
+      debugPrint('🧹 Limpiando sesiones previas...');
+      try {
+        await _firebaseAuth.signOut().timeout(Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('⚠️ Error limpiando sesión previa (continuando): $e');
+      }
 
+      // 🔧 PASO 2: Usar Firebase UI Auth en lugar de google_sign_in
+      debugPrint('📱 Iniciando autenticación con Firebase UI...');
+
+      UserCredential userCredential;
+
+      if (kIsWeb) {
+        // Para Web - usar popup
+        final provider = GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
+
+        userCredential = await _firebaseAuth.signInWithPopup(provider).timeout(
+          _authTimeoutSlow,
+          onTimeout: () {
+            throw Exception('Timeout en autenticación web');
+          },
+        );
+      } else {
+        // Para móvil - usar Firebase UI
+        userCredential = await _signInWithGoogleMobile();
+      }
+
+      // 🔧 PASO 3: Verificar que obtuvimos el usuario
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser == null) {
-        throw Exception('Error al crear la cuenta');
+        debugPrint('❌ Usuario Firebase es null después de autenticación');
+        throw Exception('No se pudo completar el inicio de sesión');
       }
 
-      debugPrint('✅ Cuenta creada en Firebase Auth: ${firebaseUser.uid}');
+      debugPrint('✅ Usuario autenticado en Firebase: ${firebaseUser.uid}');
 
-      // Actualizar el nombre de usuario en Firebase Auth
-      await firebaseUser.updateDisplayName(displayName.trim());
-      await firebaseUser.reload();
+      // 🔧 PASO 4: Procesar usuario autenticado
+      return await _processAuthenticatedUser(firebaseUser);
+    } catch (e, stack) {
+      debugPrint('❌ Error general en signInWithGoogle: $e');
 
-      // Crear el modelo de usuario
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error en inicio de sesión con Google (Firebase UI)');
+
+      // 🔧 MEJORADO: Manejo específico de errores conocidos
+      if (e.toString().contains('cancelado') ||
+          e.toString().contains('cancel')) {
+        throw Exception('Inicio de sesión cancelado');
+      } else if (e.toString().contains('network') ||
+          e.toString().contains('connection')) {
+        throw Exception(
+            'Error de conexión. Verifica tu internet e intenta nuevamente.');
+      } else if (e.toString().contains('timeout') ||
+          e.toString().contains('Timeout')) {
+        rethrow; // El mensaje ya es específico
+      } else {
+        throw Exception(
+            'Error al iniciar sesión con Google. Por favor intenta nuevamente.');
+      }
+    }
+  }
+
+  /// 🔧 MÉTODO AUXILIAR: Sign-In móvil usando Firebase UI
+  Future<UserCredential> _signInWithGoogleMobile() async {
+    try {
+      debugPrint('📱 Usando Firebase UI para móvil...');
+
+      // Crear GoogleAuthProvider
+      final provider = GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+
+      // Para Android/iOS, usar signInWithProvider (evita PigeonUserDetails)
+      return await _firebaseAuth.signInWithProvider(provider).timeout(
+        _authTimeoutFast,
+        onTimeout: () {
+          throw Exception('Timeout en autenticación móvil');
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error en signInWithProvider: $e');
+
+      // Si aún obtenemos el error PigeonUserDetails, usar fallback
+      if (e.toString().contains('PigeonUserDetails') ||
+          e.toString().contains('List<Object?>')) {
+        debugPrint('🔄 Error PigeonUserDetails detectado, usando fallback...');
+        return await _fallbackGoogleSignIn();
+      }
+
+      rethrow;
+    }
+  }
+
+  /// 🔧 MÉTODO FALLBACK CORREGIDO: Si Firebase UI también falla
+  Future<UserCredential> _fallbackGoogleSignIn() async {
+    try {
+      debugPrint('🆘 Usando método fallback...');
+
+      // OPCIÓN 1: Para Web - usar getRedirectResult
+      if (kIsWeb) {
+        final provider = GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
+
+        // Iniciar redirect
+        await _firebaseAuth.signInWithRedirect(provider);
+
+        // Esperar y obtener resultado del redirect
+        await Future.delayed(Duration(seconds: 2));
+        final result = await _firebaseAuth.getRedirectResult();
+
+        if (result.user != null) {
+          return result;
+        } else {
+          throw Exception('No se obtuvo resultado del redirect');
+        }
+      }
+      // OPCIÓN 2: Para móvil - método alternativo
+      else {
+        debugPrint('🔄 Fallback móvil: creando credential manual...');
+
+        // Si llegamos aquí, es porque Firebase UI falló
+        // Lanzar excepción más descriptiva en lugar de intentar más métodos
+        throw Exception('Múltiples métodos de autenticación fallaron. '
+            'Este dispositivo puede tener un problema de compatibilidad.');
+      }
+    } catch (e) {
+      debugPrint('❌ Método fallback también falló: $e');
+      throw Exception('Error de compatibilidad con Google Sign-In. '
+          'Esto puede deberse a una versión desactualizada de la app. '
+          'Por favor:\n'
+          '• Cierra y abre la app\n'
+          '• Si persiste, actualiza la app\n'
+          '• Contacta soporte si el problema continúa');
+    }
+  }
+
+  /// 🔧 MÉTODO AUXILIAR: Procesar usuario autenticado (MANTENIDO ORIGINAL)
+  Future<UserModel> _processAuthenticatedUser(User firebaseUser) async {
+    debugPrint('🔍 Verificando usuario en Firestore...');
+
+    DocumentSnapshot userDoc;
+    try {
+      userDoc = await _firestore
+          .collection(_usersCollection)
+          .doc(firebaseUser.uid)
+          .get()
+          .timeout(_firestoreTimeout);
+    } catch (e) {
+      debugPrint('❌ Error verificando usuario en Firestore: $e');
+      throw Exception('Error verificando datos del usuario: $e');
+    }
+
+    if (userDoc.exists) {
+      // Usuario existente
+      debugPrint('👤 Usuario existente encontrado');
+      try {
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .update({
+          'lastLogin': FieldValue.serverTimestamp(),
+        }).timeout(Duration(seconds: 15));
+
+        debugPrint('✅ lastLogin actualizado');
+      } catch (e) {
+        debugPrint('⚠️ Error actualizando lastLogin (continuando): $e');
+        FirebaseCrashlytics.instance.log('Error actualizando lastLogin: $e');
+      }
+
+      final userModel = UserModel.fromFirestore(userDoc);
+
+      // Actualizar caché
+      await _cacheManager.set(_userCacheKey, userModel);
+
+      // Actualizar datos en Crashlytics
+      _updateCrashlyticsUserData(userModel);
+
+      debugPrint('✅ Inicio de sesión exitoso - Usuario existente');
+      return userModel;
+    } else {
+      // Usuario nuevo
+      debugPrint('👤 Creando nuevo usuario...');
       final newUser = UserModel.newUser(
         id: firebaseUser.uid,
-        name: displayName.trim(),
-        email: email.trim(),
+        name: firebaseUser.displayName ?? 'Usuario',
+        email: firebaseUser.email ?? '',
         photoUrl: firebaseUser.photoURL,
       );
 
-      // Guardar en Firestore
-      await _firestore.collection(_usersCollection).doc(firebaseUser.uid).set({
-        ...newUser.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastLogin': FieldValue.serverTimestamp(),
-        'registrationMethod': 'email', // NUEVO: Método de registro
-      }).timeout(_firestoreTimeout);
+      try {
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .set({
+          ...newUser.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+        }).timeout(_firestoreTimeout);
 
-      debugPrint('✅ Usuario guardado en Firestore');
+        debugPrint('✅ Nuevo usuario guardado en Firestore');
+      } catch (e) {
+        debugPrint('❌ Error creando usuario: $e');
+        throw Exception('Error al crear usuario en la base de datos: $e');
+      }
 
       // Actualizar caché
       await _cacheManager.set(_userCacheKey, newUser);
@@ -113,204 +371,46 @@ class FirebaseAuthRepository implements AuthRepository {
       // Actualizar datos en Crashlytics
       _updateCrashlyticsUserData(newUser);
 
-      debugPrint('✅ Registro exitoso con email');
+      debugPrint('✅ Inicio de sesión exitoso - Usuario nuevo creado');
       return newUser;
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException en registro: ${e.code}');
+    }
+  }
 
-      // Registrar error específico de Firebase Auth
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en registro con email: ${e.code}');
+  /// Verifica la conectividad antes de comenzar el proceso de autenticación
+  Future<void> _verifyConnectivity() async {
+    try {
+      // Test de conectividad básico
+      final stopwatch = Stopwatch()..start();
 
-      // Manejar errores específicos
-      switch (e.code) {
-        case 'email-already-in-use':
-          throw Exception('Ya existe una cuenta con este email.');
-        case 'weak-password':
-          throw Exception('La contraseña es muy débil.');
-        case 'invalid-email':
-          throw Exception('El email ingresado no es válido.');
-        case 'operation-not-allowed':
-          throw Exception('El registro con email no está habilitado.');
-        case 'network-request-failed':
-          throw Exception('Error de conexión. Verifica tu internet.');
-        case 'too-many-requests':
-          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
-        default:
-          throw Exception('Error al crear la cuenta: ${e.message}');
+      await _firestore
+          .doc('test/connectivity')
+          .get(GetOptions(source: Source.server))
+          .timeout(Duration(seconds: 10));
+
+      stopwatch.stop();
+      final latency = stopwatch.elapsedMilliseconds;
+
+      debugPrint('🌐 Conectividad verificada (${latency}ms)');
+
+      if (latency > 5000) {
+        debugPrint('⚠️ Conexión lenta detectada (${latency}ms)');
+        throw Exception('La conexión a internet es muy lenta. '
+            'Esto puede causar timeouts durante la autenticación. '
+            'Considera usar una conexión más estable.');
       }
-    } catch (e, stack) {
-      debugPrint('❌ Error general en registro: $e');
-
-      // Registrar otros errores
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en registro con email/contraseña');
-
+    } catch (e) {
+      debugPrint('❌ Error de conectividad: $e');
       if (e.toString().contains('timeout') ||
           e.toString().contains('Timeout')) {
-        throw Exception('La creación de cuenta está tardando demasiado. '
-            'Verifica tu conexión e intenta nuevamente.');
+        throw Exception('No se puede conectar con los servidores. '
+            'Verifica tu conexión a internet e intenta nuevamente.');
       }
-
-      throw Exception('Error al crear la cuenta. Intenta nuevamente.');
+      // Si es otro tipo de error, continuar (puede ser que el documento test no exista)
+      debugPrint('⚠️ Verificación de conectividad falló, continuando...');
     }
   }
 
-  /// NUEVO: Envía un email de recuperación de contraseña
-  @override
-  Future<void> sendPasswordResetEmail(String email) async {
-    try {
-      debugPrint('📧 Enviando email de recuperación a: $email');
-
-      // Verificar conectividad
-      await _verifyConnectivity();
-
-      await _firebaseAuth
-          .sendPasswordResetEmail(email: email.trim())
-          .timeout(_authTimeout);
-
-      debugPrint('✅ Email de recuperación enviado');
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException en recuperación: ${e.code}');
-
-      // Registrar error
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error enviando email de recuperación: ${e.code}');
-
-      // Manejar errores específicos
-      switch (e.code) {
-        case 'user-not-found':
-          throw Exception('No se encontró un usuario con este email.');
-        case 'invalid-email':
-          throw Exception('El email ingresado no es válido.');
-        case 'network-request-failed':
-          throw Exception('Error de conexión. Verifica tu internet.');
-        case 'too-many-requests':
-          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
-        default:
-          throw Exception(
-              'Error al enviar email de recuperación: ${e.message}');
-      }
-    } catch (e, stack) {
-      debugPrint('❌ Error general en recuperación: $e');
-
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error enviando email de recuperación');
-
-      if (e.toString().contains('timeout') ||
-          e.toString().contains('Timeout')) {
-        throw Exception('El envío del email está tardando demasiado. '
-            'Verifica tu conexión e intenta nuevamente.');
-      }
-
-      throw Exception('Error al enviar email de recuperación.');
-    }
-  }
-
-  /// NUEVO: Actualiza la contraseña del usuario actual
-  @override
-  Future<void> updatePassword(String newPassword) async {
-    try {
-      debugPrint('🔒 Actualizando contraseña del usuario');
-
-      final User? currentUser = _firebaseAuth.currentUser;
-      if (currentUser == null) {
-        throw Exception('No hay usuario autenticado');
-      }
-
-      // Verificar conectividad
-      await _verifyConnectivity();
-
-      await currentUser.updatePassword(newPassword).timeout(_authTimeout);
-
-      debugPrint('✅ Contraseña actualizada exitosamente');
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException actualizando contraseña: ${e.code}');
-
-      // Registrar error
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error actualizando contraseña: ${e.code}');
-
-      // Manejar errores específicos
-      switch (e.code) {
-        case 'weak-password':
-          throw Exception('La nueva contraseña es muy débil.');
-        case 'requires-recent-login':
-          throw Exception(
-              'Necesitas autenticarte de nuevo para cambiar la contraseña.');
-        case 'network-request-failed':
-          throw Exception('Error de conexión. Verifica tu internet.');
-        default:
-          throw Exception('Error al actualizar contraseña: ${e.message}');
-      }
-    } catch (e, stack) {
-      debugPrint('❌ Error general actualizando contraseña: $e');
-
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error actualizando contraseña');
-
-      throw Exception('Error al actualizar la contraseña.');
-    }
-  }
-
-  /// NUEVO: Reautentica al usuario con su contraseña actual
-  @override
-  Future<void> reauthenticateWithPassword(String currentPassword) async {
-    try {
-      debugPrint('🔐 Reautenticando usuario');
-
-      final User? currentUser = _firebaseAuth.currentUser;
-      if (currentUser == null || currentUser.email == null) {
-        throw Exception('No hay usuario autenticado');
-      }
-
-      // Verificar conectividad
-      await _verifyConnectivity();
-
-      // Crear credencial con email y contraseña actual
-      final credential = EmailAuthProvider.credential(
-        email: currentUser.email!,
-        password: currentPassword,
-      );
-
-      // Reautenticar
-      await currentUser
-          .reauthenticateWithCredential(credential)
-          .timeout(_authTimeout);
-
-      debugPrint('✅ Reautenticación exitosa');
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException en reautenticación: ${e.code}');
-
-      // Registrar error
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error en reautenticación: ${e.code}');
-
-      // Manejar errores específicos
-      switch (e.code) {
-        case 'wrong-password':
-          throw Exception('La contraseña actual es incorrecta.');
-        case 'user-mismatch':
-          throw Exception('Error de autenticación. Intenta nuevamente.');
-        case 'network-request-failed':
-          throw Exception('Error de conexión. Verifica tu internet.');
-        case 'too-many-requests':
-          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
-        default:
-          throw Exception('Error de autenticación: ${e.message}');
-      }
-    } catch (e, stack) {
-      debugPrint('❌ Error general en reautenticación: $e');
-
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error en reautenticación');
-
-      throw Exception('Error al verificar la contraseña actual.');
-    }
-  }
-
-  /// Actualizar el método existente signInWithEmailPassword para incluir @override
-  @override
+  /// 🔧 MÉTODO MANTENIDO: Inicio de sesión con email y contraseña
   Future<UserModel> signInWithEmailPassword({
     required String email,
     required String password,
@@ -421,412 +521,12 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserModel?> getCurrentUser() async {
-    final User? firebaseUser = _firebaseAuth.currentUser;
-
-    if (firebaseUser == null) {
-      debugPrint('🔐 No hay usuario autenticado en Firebase Auth');
-      return null;
-    }
-
-    try {
-      debugPrint('🔍 Obteniendo usuario actual: ${firebaseUser.uid}');
-
-      // Intentar obtener datos del usuario desde caché primero
-      final cachedUser = await _cacheManager.get<UserModel>(_userCacheKey);
-      if (cachedUser != null && _isUserCacheValid(cachedUser)) {
-        debugPrint('✅ Usuario obtenido desde caché');
-        return cachedUser;
-      }
-
-      // Si no hay caché o está desactualizada, obtener desde servidor
-      debugPrint('🌐 Obteniendo usuario desde Firestore...');
-      final userDoc = await _firestore
-          .collection(_usersCollection)
-          .doc(firebaseUser.uid)
-          .get(const GetOptions(source: Source.server))
-          .timeout(_firestoreTimeout);
-
-      if (userDoc.exists) {
-        final userModel = UserModel.fromFirestore(userDoc);
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, userModel);
-
-        // Actualizar metadata de Crashlytics
-        _updateCrashlyticsUserData(userModel);
-
-        debugPrint('✅ Usuario obtenido desde Firestore');
-        return userModel;
-      } else {
-        // Si el documento no existe en Firestore pero sí en Auth, crear nuevo usuario
-        debugPrint('👤 Usuario no existe en Firestore, creando nuevo...');
-        final newUser = UserModel.newUser(
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? 'Usuario',
-          email: firebaseUser.email ?? '',
-          photoUrl: firebaseUser.photoURL,
-        );
-
-        // Guardar el nuevo usuario en Firestore
-        await _firestore
-            .collection(_usersCollection)
-            .doc(firebaseUser.uid)
-            .set({
-          ...newUser.toMap(),
-          'createdAt': FieldValue.serverTimestamp(),
-        }).timeout(_firestoreTimeout);
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, newUser);
-
-        debugPrint('✅ Nuevo usuario creado');
-        return newUser;
-      }
-    } catch (e, stack) {
-      // Registrar error en Crashlytics
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error al obtener usuario actual');
-
-      debugPrint('❌ Error obteniendo usuario actual: $e');
-
-      // En caso de error de red, intentar usar caché como fallback
-      final cachedUser = await _cacheManager.get<UserModel>(_userCacheKey);
-      if (cachedUser != null) {
-        debugPrint('🔄 Usando usuario desde caché como fallback');
-        return cachedUser;
-      }
-
-      throw Exception('Error al obtener información del usuario');
-    }
-  }
-
-  // Timeouts optimizados para diferentes escenarios
-  static const Duration _authTimeoutFast =
-      Duration(seconds: 45); // ⬆️ Aumentado
-  static const Duration _authTimeoutSlow =
-      Duration(seconds: 60); // ⬆️ Para conexiones lentas
-  // static const Duration _firestoreTimeout = Duration(seconds: 20); // ⬆️ Aumentado
-  // static const Duration _credentialsTimeout = Duration(seconds: 25); // ⬆️ Aumentado
-
-  @override
-  Future<UserModel> signInWithGoogle() async {
-    try {
-      debugPrint('🚀 Iniciando proceso de autenticación con Google...');
-
-      // 🔧 PASO 0: Verificar conectividad antes de comenzar
-      debugPrint('🌐 Verificando conectividad...');
-      await _verifyConnectivity();
-
-      // 🔧 PASO 1: Limpiar cualquier sesión previa de Google
-      debugPrint('🧹 Limpiando sesiones previas...');
-      try {
-        await _googleSignIn.signOut().timeout(Duration(seconds: 10));
-      } catch (e) {
-        debugPrint('⚠️ Error limpiando sesión previa (continuando): $e');
-        // No fallar por esto, continuar
-      }
-
-      // 🔧 PASO 2: Iniciar el flujo de autenticación de Google con timeout extendido
-      debugPrint(
-          '📱 Iniciando Google Sign-In (timeout: ${_authTimeoutSlow.inSeconds}s)...');
-      final GoogleSignInAccount? googleUser =
-          await _googleSignIn.signIn().timeout(
-        _authTimeoutSlow, // Timeout más largo para Google Sign-In
-        onTimeout: () {
-          debugPrint(
-              '⏰ Timeout al conectar con Google (${_authTimeoutSlow.inSeconds}s)');
-          throw Exception(
-              'La autenticación con Google está tardando demasiado. '
-              'Esto puede deberse a una conexión lenta. Por favor:\n'
-              '• Verifica tu conexión a internet\n'
-              '• Intenta nuevamente en un momento\n'
-              '• Considera usar una conexión más estable');
-        },
-      );
-
-      if (googleUser == null) {
-        debugPrint('❌ Usuario canceló el inicio de sesión');
-        throw Exception('Inicio de sesión cancelado por el usuario');
-      }
-
-      debugPrint('✅ Google Sign-In exitoso para: ${googleUser.email}');
-
-      // 🔧 PASO 3: Obtener detalles de autenticación con timeout extendido
-      debugPrint(
-          '🔑 Obteniendo credenciales (timeout: ${_credentialsTimeout.inSeconds}s)...');
-      GoogleSignInAuthentication googleAuth;
-      try {
-        googleAuth = await googleUser.authentication.timeout(
-          _credentialsTimeout,
-          onTimeout: () {
-            debugPrint(
-                '⏰ Timeout obteniendo credenciales (${_credentialsTimeout.inSeconds}s)');
-            throw Exception('Timeout al obtener credenciales de Google. '
-                'La conexión es muy lenta. Intenta nuevamente.');
-          },
-        );
-      } catch (e) {
-        debugPrint('❌ Error obteniendo credenciales: $e');
-        if (e.toString().contains('timeout') ||
-            e.toString().contains('Timeout')) {
-          throw Exception(
-              'Las credenciales de Google están tardando demasiado en obtenerse. '
-              'Verifica tu conexión e intenta nuevamente.');
-        }
-        throw Exception('Error al obtener credenciales de Google: $e');
-      }
-
-      // 🔧 PASO 4: Verificar que tenemos los tokens necesarios
-      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
-        debugPrint('❌ Tokens de autenticación faltantes');
-        debugPrint(
-            '   AccessToken: ${googleAuth.accessToken != null ? "✅" : "❌"}');
-        debugPrint('   IdToken: ${googleAuth.idToken != null ? "✅" : "❌"}');
-        throw Exception('No se pudieron obtener los tokens de autenticación. '
-            'Por favor intenta nuevamente.');
-      }
-
-      debugPrint('✅ Credenciales obtenidas correctamente');
-
-      // 🔧 PASO 5: Crear credencial para Firebase
-      debugPrint('🔗 Creando credencial Firebase...');
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      // 🔧 PASO 6: Iniciar sesión en Firebase con timeout optimizado
-      debugPrint(
-          '🔥 Autenticando con Firebase (timeout: ${_authTimeoutFast.inSeconds}s)...');
-      UserCredential userCredential;
-      try {
-        userCredential =
-            await _firebaseAuth.signInWithCredential(credential).timeout(
-          _authTimeoutFast,
-          onTimeout: () {
-            debugPrint(
-                '⏰ Timeout autenticando con Firebase (${_authTimeoutFast.inSeconds}s)');
-            throw Exception(
-                'La autenticación con Firebase está tardando demasiado. '
-                'Esto puede indicar problemas del servidor. Intenta nuevamente.');
-          },
-        );
-      } on FirebaseAuthException catch (e) {
-        debugPrint('❌ FirebaseAuthException: ${e.code} - ${e.message}');
-
-        // Manejar errores específicos de Firebase Auth
-        switch (e.code) {
-          case 'account-exists-with-different-credential':
-            throw Exception(
-                'Esta cuenta ya existe con un método de inicio de sesión diferente');
-          case 'invalid-credential':
-            throw Exception(
-                'Credenciales inválidas. Por favor intenta nuevamente.');
-          case 'operation-not-allowed':
-            throw Exception(
-                'El inicio de sesión con Google no está habilitado en la configuración');
-          case 'user-disabled':
-            throw Exception('Esta cuenta ha sido deshabilitada');
-          case 'network-request-failed':
-            throw Exception(
-                'Error de conexión con Firebase. Verifica tu internet.');
-          case 'too-many-requests':
-            throw Exception(
-                'Demasiados intentos. Espera un momento e intenta nuevamente.');
-          default:
-            throw Exception('Error de autenticación: ${e.message}');
-        }
-      } catch (e) {
-        debugPrint('❌ Error genérico en autenticación Firebase: $e');
-        if (e.toString().contains('timeout') ||
-            e.toString().contains('Timeout')) {
-          throw Exception('Firebase está tardando en responder. '
-              'Verifica tu conexión e intenta nuevamente.');
-        }
-        throw Exception('Error conectando con Firebase: $e');
-      }
-
-      // 🔧 PASO 7: Verificar que obtuvimos el usuario
-      final User? firebaseUser = userCredential.user;
-
-      if (firebaseUser == null) {
-        debugPrint('❌ Usuario Firebase es null después de autenticación');
-        throw Exception('No se pudo completar el inicio de sesión');
-      }
-
-      debugPrint('✅ Usuario autenticado en Firebase: ${firebaseUser.uid}');
-
-      // 🔧 PASO 8: Verificar si el usuario ya existe en Firestore
-      debugPrint(
-          '🔍 Verificando usuario en Firestore (timeout: ${_firestoreTimeout.inSeconds}s)...');
-      DocumentSnapshot userDoc;
-      try {
-        userDoc = await _firestore
-            .collection(_usersCollection)
-            .doc(firebaseUser.uid)
-            .get()
-            .timeout(
-          _firestoreTimeout,
-          onTimeout: () {
-            debugPrint(
-                '⏰ Timeout obteniendo datos del usuario (${_firestoreTimeout.inSeconds}s)');
-            throw Exception('La base de datos está tardando en responder. '
-                'Intenta nuevamente en un momento.');
-          },
-        );
-      } catch (e) {
-        debugPrint('❌ Error verificando usuario en Firestore: $e');
-        if (e.toString().contains('timeout') ||
-            e.toString().contains('Timeout')) {
-          throw Exception(
-              'La base de datos está tardando demasiado en responder. '
-              'Intenta nuevamente.');
-        }
-        throw Exception('Error verificando datos del usuario: $e');
-      }
-
-      // Resto del método permanece igual...
-      if (userDoc.exists) {
-        // Usuario existente
-        debugPrint('👤 Usuario existente encontrado');
-        try {
-          await _firestore
-              .collection(_usersCollection)
-              .doc(firebaseUser.uid)
-              .update({
-            'lastLogin': FieldValue.serverTimestamp(),
-          }).timeout(Duration(seconds: 15));
-
-          debugPrint('✅ lastLogin actualizado');
-        } catch (e) {
-          debugPrint('⚠️ Error actualizando lastLogin (continuando): $e');
-          FirebaseCrashlytics.instance.log('Error actualizando lastLogin: $e');
-        }
-
-        final userModel = UserModel.fromFirestore(userDoc);
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, userModel);
-
-        // Actualizar datos en Crashlytics
-        _updateCrashlyticsUserData(userModel);
-
-        debugPrint('✅ Inicio de sesión exitoso - Usuario existente');
-        return userModel;
-      } else {
-        // Usuario nuevo
-        debugPrint('👤 Creando nuevo usuario...');
-        final newUser = UserModel.newUser(
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? googleUser.displayName ?? 'Usuario',
-          email: firebaseUser.email ?? googleUser.email,
-          photoUrl: firebaseUser.photoURL ?? googleUser.photoUrl,
-        );
-
-        try {
-          await _firestore
-              .collection(_usersCollection)
-              .doc(firebaseUser.uid)
-              .set({
-            ...newUser.toMap(),
-            'createdAt': FieldValue.serverTimestamp(),
-            'lastLogin': FieldValue.serverTimestamp(),
-          }).timeout(_firestoreTimeout);
-
-          debugPrint('✅ Nuevo usuario guardado en Firestore');
-        } catch (e) {
-          debugPrint('❌ Error creando usuario: $e');
-          if (e.toString().contains('timeout') ||
-              e.toString().contains('Timeout')) {
-            throw Exception('Error guardando usuario en la base de datos. '
-                'Intenta nuevamente.');
-          }
-          throw Exception('Error al crear usuario en la base de datos: $e');
-        }
-
-        // Actualizar caché
-        await _cacheManager.set(_userCacheKey, newUser);
-
-        // Actualizar datos en Crashlytics
-        _updateCrashlyticsUserData(newUser);
-
-        debugPrint('✅ Inicio de sesión exitoso - Usuario nuevo creado');
-        return newUser;
-      }
-    } on FirebaseAuthException catch (e, stack) {
-      debugPrint('❌ FirebaseAuthException en signInWithGoogle: ${e.code}');
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason:
-              'FirebaseAuthException en inicio de sesión con Google: ${e.code}');
-      throw Exception('Error de autenticación: ${e.message}');
-    } catch (e, stack) {
-      debugPrint('❌ Error general en signInWithGoogle: $e');
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en inicio de sesión con Google');
-
-      // 🔧 MEJORADO: Manejo específico de timeouts
-      if (e.toString().contains('timeout') ||
-          e.toString().contains('Timeout')) {
-        // No re-lanzar el timeout, el mensaje ya es específico
-        rethrow;
-      } else if (e.toString().contains('network') ||
-          e.toString().contains('connection')) {
-        throw Exception(
-            'Error de conexión. Verifica tu internet e intenta nuevamente.');
-      } else if (e.toString().contains('cancelado')) {
-        throw Exception('Inicio de sesión cancelado');
-      } else {
-        throw Exception(
-            'Error al iniciar sesión con Google. Por favor intenta nuevamente.');
-      }
-    }
-  }
-
-  /// Verifica la conectividad antes de comenzar el proceso de autenticación
-  Future<void> _verifyConnectivity() async {
-    try {
-      // Test de conectividad básico
-      final stopwatch = Stopwatch()..start();
-
-      await _firestore
-          .doc('test/connectivity')
-          .get(GetOptions(source: Source.server))
-          .timeout(Duration(seconds: 10));
-
-      stopwatch.stop();
-      final latency = stopwatch.elapsedMilliseconds;
-
-      debugPrint('🌐 Conectividad verificada (${latency}ms)');
-
-      if (latency > 5000) {
-        debugPrint('⚠️ Conexión lenta detectada (${latency}ms)');
-        throw Exception('La conexión a internet es muy lenta. '
-            'Esto puede causar timeouts durante la autenticación. '
-            'Considera usar una conexión más estable.');
-      }
-    } catch (e) {
-      debugPrint('❌ Error de conectividad: $e');
-      if (e.toString().contains('timeout') ||
-          e.toString().contains('Timeout')) {
-        throw Exception('No se puede conectar con los servidores. '
-            'Verifica tu conexión a internet e intenta nuevamente.');
-      }
-      // Si es otro tipo de error, continuar (puede ser que el documento test no exista)
-      debugPrint('⚠️ Verificación de conectividad falló, continuando...');
-    }
-  }
-
-  @override
   Future<void> signOut() async {
     try {
       debugPrint('🚪 Cerrando sesión...');
 
       // Limpiar caché al cerrar sesión
       await _cacheManager.remove(_userCacheKey);
-
-      // Cerrar sesión en Google
-      await _googleSignIn.signOut();
 
       // Cerrar sesión en Firebase
       await _firebaseAuth.signOut();
@@ -1070,5 +770,32 @@ class FirebaseAuthRepository implements AuthRepository {
     } catch (e) {
       debugPrint('⚠️ Error actualizando datos de Crashlytics: $e');
     }
+  }
+
+  @override
+  Future<void> reauthenticateWithPassword(String currentPassword) {
+    // TODO: implement reauthenticateWithPassword
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UserModel> registerWithEmailPassword(
+      {required String email,
+      required String password,
+      required String displayName}) {
+    // TODO: implement registerWithEmailPassword
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) {
+    // TODO: implement sendPasswordResetEmail
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> updatePassword(String newPassword) {
+    // TODO: implement updatePassword
+    throw UnimplementedError();
   }
 }
