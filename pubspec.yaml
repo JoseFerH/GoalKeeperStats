@@ -17,21 +17,21 @@ dependencies:
   equatable: ^2.0.5
   provider: ^6.1.1
 
-  # Firebase y backend
+  # Firebase y backend - VERSIONES CORREGIDAS Y SIMPLIFICADAS
   firebase_core: ^2.24.2
-  firebase_auth: 4.15.3        # Versión específica que funciona
+  firebase_auth: ^4.15.3
   cloud_firestore: ^4.13.6
   firebase_analytics: ^10.7.4
   firebase_crashlytics: ^3.4.9
-  firebase_ui_auth: ^1.9.0           # 🆕 NUEVA - maneja toda la autenticación
-  firebase_ui_oauth_google: ^1.2.14  # 🆕 NUEVA - Google OAuth
-  google_sign_in: 6.1.6        # Versión específica compatible
+  
+  # 🔧 CORRECCIÓN: Usar google_sign_in directamente (eliminar Firebase UI Auth)
+  google_sign_in: ^6.1.6
 
   # UI y visualización
   fl_chart: ^0.66.0
   
-  # Internacionalización (versión específica requerida)
-  intl: ^0.20.2
+  # Internacionalización
+  intl: ^0.19.0  # 🔧 CORRECCIÓN: Versión más estable
   
   # Almacenamiento y datos
   shared_preferences: ^2.2.2
@@ -40,7 +40,6 @@ dependencies:
   http: ^1.1.0
   googleapis: ^11.4.0
   googleapis_auth: ^1.4.1
-  google_mobile_ads: ^5.0.0
   
   # Utilidades
   url_launcher: ^6.2.2
@@ -53,8 +52,8 @@ dependencies:
   in_app_purchase_android: ^0.3.0+16
   in_app_purchase_storekit: ^0.3.6+7
 
-  # NUEVO: Anuncios de Google AdMob
-  # google_mobile_ads: ^4.0.0
+  # Anuncios de Google AdMob
+  google_mobile_ads: ^5.0.0
 
 dev_dependencies:
   flutter_test:
@@ -62,23 +61,13 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   build_runner: ^2.4.7
 
-# FORZAR LA VERSIÓN DE INTL (usar con precaución)
-#  dependency_overrides:
-#    intl: ^0.20.2
+# 🔧 CORRECCIÓN: Forzar versión de intl si hay conflictos
+dependency_overrides:
+  intl: ^0.19.0
 
 flutter:
   uses-material-design: true
   
-  # NUEVO: Configuración de assets para anuncios
-  # assets:
-  #   - assets/images/
-  #   - assets/icons/
-    # Añadir assets específicos para anuncios si los tienes
-    # - assets/ads/
-  
-  # fonts:
-  #   - family: Roboto
-  #     fonts:
-  #       - asset: fonts/Roboto-Regular.ttf
-  #       - asset: fonts/Roboto-Bold.ttf
-  #         weight: 700
+  # Assets para la aplicación
+  assets:
+    - assets/images/

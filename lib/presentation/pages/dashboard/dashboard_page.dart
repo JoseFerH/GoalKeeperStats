@@ -6,6 +6,7 @@ import 'package:goalkeeper_stats/domain/repositories/auth_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/matches_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/shots_repository.dart';
 import 'package:goalkeeper_stats/domain/repositories/goalkeeper_passes_repository.dart';
+import 'package:goalkeeper_stats/main.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
@@ -72,7 +73,8 @@ class _DashboardPageState extends State<DashboardPage>
     _crashlyticsService = FirebaseCrashlyticsService();
 
     // Inicializar el AuthBloc con todas sus dependencias
-    final authRepository = FirebaseAuthRepository();
+    final authRepository = FirebaseAuthRepository(
+        cacheManager: cacheManager, crashlyticsService: crashlyticsService);
     _authBloc = AuthBloc(
       authRepository: authRepository,
       analyticsService: AnalyticsService(),
@@ -105,17 +107,24 @@ class _DashboardPageState extends State<DashboardPage>
 
   void _initRepositories() {
     // Crear repositorio de autenticación compartido
-    _authRepository = FirebaseAuthRepository();
+    _authRepository = FirebaseAuthRepository(
+        cacheManager: cacheManager, crashlyticsService: crashlyticsService);
 
     // Inicializar los repositorios
 
     // Inicializar repositorios Firebase correctamente
-    _matchesRepository =
-        FirebaseMatchesRepository(authRepository: FirebaseAuthRepository());
-    _shotsRepository =
-        FirebaseShotsRepository(authRepository: FirebaseAuthRepository());
+    _matchesRepository = FirebaseMatchesRepository(
+        authRepository: FirebaseAuthRepository(
+            cacheManager: cacheManager,
+            crashlyticsService: crashlyticsService));
+    _shotsRepository = FirebaseShotsRepository(
+        authRepository: FirebaseAuthRepository(
+            cacheManager: cacheManager,
+            crashlyticsService: crashlyticsService));
     _passesRepository = FirebaseGoalkeeperPassesRepository(
-        authRepository: FirebaseAuthRepository());
+        authRepository: FirebaseAuthRepository(
+            cacheManager: cacheManager,
+            crashlyticsService: crashlyticsService));
 
     // Inicializar el BLoC de autenticación
     _authBloc = AuthBloc(

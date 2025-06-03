@@ -154,7 +154,8 @@ class DependencyInjection {
   AuthRepository _createAuthRepository() {
     return _currentMode == StorageMode.local
         ? LocalAuthRepository()
-        : FirebaseAuthRepository();
+        : FirebaseAuthRepository(
+            cacheManager: cacheManager, crashlyticsService: crashlyticsService);
   }
 
   ShotsRepository _createShotsRepository() {

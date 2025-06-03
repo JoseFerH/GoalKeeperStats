@@ -66,8 +66,7 @@ class RepositoryProvider {
 
       // 1. Crear AuthRepository primero (no depende de otros repositorios)
       _authRepository = FirebaseAuthRepository(
-        cacheManager: _cacheManager,
-      );
+          cacheManager: cacheManager, crashlyticsService: crashlyticsService);
 
       // 2. Crear ShotsRepository (depende de AuthRepository)
       _shotsRepository = FirebaseShotsRepository(

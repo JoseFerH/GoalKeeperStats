@@ -26,6 +26,7 @@ import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/daily_limits_service.dart'; // NUEVO: Servicio de límites
 import 'package:goalkeeper_stats/services/ad_service.dart'; // NUEVO: Servicio de anuncios
 import 'package:goalkeeper_stats/core/constants/app_constants.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // ✅ AÑADIR
 
 // Variables globales para los repositorios
 late AuthRepository authRepository;
@@ -160,7 +161,10 @@ Future<void> main() async {
       debugPrint('🗄️ Inicializando repositorios...');
 
       // 1. Inicializar AuthRepository
-      authRepository = FirebaseAuthRepository();
+      authRepository = FirebaseAuthRepository(
+        cacheManager: cacheManager,
+        crashlyticsService: crashlyticsService,
+      );
       debugPrint('✅ AuthRepository inicializado');
 
       // 2. CORREGIDO: Inicializar ShotsRepository con DailyLimitsService

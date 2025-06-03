@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="default_web_client_id">TU-GOOGLE-CLIENT-ID-AQUI</string>
+    <!-- 🔧 CORREGIDO: CLIENT_ID real del google-services.json -->
+    <string name="default_web_client_id">415256305974-9smib8kjpro0f7iacq4ctt2gqk3mdf0u.apps.googleusercontent.com</string>
 </resources>
