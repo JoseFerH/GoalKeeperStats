@@ -27,10 +27,38 @@ class _LoginPageState extends State<LoginPage> {
   bool _isPasswordVisible = false;
 
   @override
+  @override
   void initState() {
     super.initState();
-    // Disparar evento de verificación de estado al iniciar
-    context.read<AuthBloc>().add(CheckAuthStatusEvent());
+
+    // 🔧 CORRECCIÓN CRÍTICA: No disparar CheckAuthStatusEvent inmediatamente
+    // Dar tiempo a que Firebase Auth se estabilice completamente
+    _initializeWithDelay();
+  }
+
+  /// 🔧 MÉTODO NUEVO: Inicialización con delay para evitar race conditions
+  Future<void> _initializeWithDelay() async {
+    try {
+      // Esperar a que el widget esté completamente montado
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Verificar que el widget sigue montado
+      if (!mounted) return;
+
+      debugPrint('🔍 Verificando estado de autenticación con delay...');
+
+      // Ahora sí, disparar el evento de verificación
+      context.read<AuthBloc>().add(CheckAuthStatusEvent());
+    } catch (e) {
+      debugPrint('⚠️ Error en inicialización con delay: $e');
+      // Si hay error, intentar de todas formas después de más tiempo
+      if (mounted) {
+        await Future.delayed(const Duration(milliseconds: 1000));
+        if (mounted) {
+          context.read<AuthBloc>().add(CheckAuthStatusEvent());
+        }
+      }
+    }
   }
 
   @override
@@ -352,58 +380,29 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  /// 🔧 MÉTODO CORREGIDO: Manejo de email sign-in con mejores validaciones
   void _handleEmailSignIn() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     try {
-      // Obtener el servicio de conectividad desde el Provider
-      final connectivityService =
-          Provider.of<ConnectivityService>(context, listen: false);
-      final isConnected = await connectivityService.checkConnectivity();
-
-      if (!isConnected) {
+      // 🔧 VALIDACIÓN ADICIONAL: Verificar estado del BLoC
+      final authBlocState = context.read<AuthBloc>().state;
+      if (authBlocState is AuthLoadingState) {
+        debugPrint('⏳ AuthBloc ocupado, no procesar email sign-in');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-                'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'),
+            content: Text('Por favor espera, hay una operación en progreso...'),
             backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
           ),
         );
         return;
       }
 
-      // Registrar evento de analítica
-      AnalyticsService()
-          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
-
-      // Crear evento de inicio de sesión con email/contraseña
-      context.read<AuthBloc>().add(
-            SignInWithEmailPasswordEvent(
-              email: _emailController.text.trim(),
-              password: _passwordController.text,
-            ),
-          );
-    } catch (e) {
-      debugPrint("Error al iniciar sesión: $e");
-      // Si hay error obteniendo el servicio, continuar con el inicio de sesión
-      AnalyticsService()
-          .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
-
-      context.read<AuthBloc>().add(
-            SignInWithEmailPasswordEvent(
-              email: _emailController.text.trim(),
-              password: _passwordController.text,
-            ),
-          );
-    }
-  }
-
-  Widget _buildGoogleSignInButton(BuildContext context) {
-    void attemptSignIn() async {
+      // Verificar conectividad
       try {
-        // Obtener el servicio de conectividad desde el Provider
         final connectivityService =
             Provider.of<ConnectivityService>(context, listen: false);
         final isConnected = await connectivityService.checkConnectivity();
@@ -414,22 +413,125 @@ class _LoginPageState extends State<LoginPage> {
               content: Text(
                   'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'),
               backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        debugPrint("⚠️ Error al verificar conectividad para email: $e");
+        // Continuar sin verificación
+      }
+
+      // Registrar evento de analítica
+      try {
+        AnalyticsService()
+            .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
+      } catch (e) {
+        debugPrint("⚠️ Error en analytics para email: $e");
+        // Continuar sin analytics
+      }
+
+      // 🔧 ESPERA ADICIONAL: Para email también, evitar race conditions
+      debugPrint('⏳ Preparando email sign-in...');
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (!mounted) return;
+
+      // Crear evento de inicio de sesión
+      context.read<AuthBloc>().add(
+            SignInWithEmailPasswordEvent(
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+            ),
+          );
+    } catch (e) {
+      debugPrint("❌ Error en _handleEmailSignIn: $e");
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error preparando inicio de sesión: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// 🔧 MÉTODO CORREGIDO: Manejo de Google Sign-In con mejores validaciones
+  Widget _buildGoogleSignInButton(BuildContext context) {
+    void attemptSignIn() async {
+      try {
+        // 🔧 VALIDACIÓN ADICIONAL: Verificar que el BLoC esté listo
+        final authBlocState = context.read<AuthBloc>().state;
+        if (authBlocState is AuthLoadingState) {
+          debugPrint('⏳ AuthBloc ocupado, esperando...');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Por favor espera, la aplicación se está inicializando...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
             ),
           );
           return;
         }
 
-        AnalyticsService()
-            .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
+        // Verificar conectividad
+        try {
+          final connectivityService =
+              Provider.of<ConnectivityService>(context, listen: false);
+          final isConnected = await connectivityService.checkConnectivity();
 
+          if (!isConnected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                    'No hay conexión a internet. Por favor, conéctate e intenta nuevamente.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+        } catch (e) {
+          debugPrint("⚠️ Error al verificar conectividad: $e");
+          // Continuar sin verificación de conectividad
+        }
+
+        // Registrar evento de analytics
+        try {
+          AnalyticsService().logEvent(
+              name: 'login_attempt', parameters: {'method': 'google'});
+        } catch (e) {
+          debugPrint("⚠️ Error en analytics: $e");
+          // Continuar sin analytics
+        }
+
+        // 🔧 NUEVA VALIDACIÓN: Esperar un poco antes de intentar login
+        // Esto ayuda a evitar el race condition con Firebase Auth
+        debugPrint('⏳ Preparando Google Sign-In...');
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        if (!mounted) return;
+
+        // Intentar el login
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       } catch (e) {
-        debugPrint("Error al verificar conectividad: $e");
-        // Si hay error obteniendo el servicio, continuar con el inicio de sesión
-        AnalyticsService()
-            .logEvent(name: 'login_attempt', parameters: {'method': 'google'});
+        debugPrint("❌ Error general en attemptSignIn: $e");
 
-        context.read<AuthBloc>().add(SignInWithGoogleEvent());
+        // Mostrar error al usuario
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error iniciando sesión: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     }
 

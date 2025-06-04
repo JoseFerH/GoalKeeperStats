@@ -1,5 +1,6 @@
 // lib/presentation/pages/shot_records/shot_entry_tab.dart
 // CORREGIDO: Con debugging mejorado para límites diarios
+// ACTUALIZADO: Debug solo para usuarios premium
 
 import 'package:flutter/material.dart';
 import 'package:goalkeeper_stats/data/models/match_model.dart';
@@ -74,8 +75,8 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
       _loadPreSelectedMatch();
     }
 
-    // DEBUG: En modo debug, mostrar información de Firestore
-    if (kDebugMode && !widget.user.subscription.isPremium) {
+    // DEBUG: Solo para usuarios premium en modo debug
+    if (kDebugMode && widget.user.subscription.isPremium) {
       _debugFirestoreData();
     }
   }
@@ -151,10 +152,16 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
     }
   }
 
-  // NUEVO: Método para debug de datos en Firestore
+  // ACTUALIZADO: Método para debug de datos en Firestore (solo premium)
   Future<void> _debugFirestoreData() async {
+    // Solo permitir debug para usuarios premium
+    if (!widget.user.subscription.isPremium) {
+      debugPrint('🚫 Debug restringido - Usuario no premium');
+      return;
+    }
+
     try {
-      debugPrint('🚀 INICIANDO DEBUG DE FIRESTORE...');
+      debugPrint('🚀 INICIANDO DEBUG DE FIRESTORE (USUARIO PREMIUM)...');
       final debugInfo =
           await _dailyLimitsService.debugFirestoreData(widget.user.id);
 
@@ -275,12 +282,12 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                   _connectivityService.showConnectivitySnackBar(context),
               tooltip: 'Sin conexión',
             ),
-          // NUEVO: Botón de debug en modo desarrollo
-          if (kDebugMode && !widget.user.subscription.isPremium)
+          // ACTUALIZADO: Botón de debug solo para usuarios premium en modo desarrollo
+          if (kDebugMode && widget.user.subscription.isPremium)
             IconButton(
               icon: const Icon(Icons.bug_report),
               onPressed: _debugFirestoreData,
-              tooltip: 'Debug Firestore',
+              tooltip: 'Debug Firestore (Premium)',
             ),
         ],
       ),
@@ -387,8 +394,10 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                         ),
                       ],
                     ),
-                    // NUEVO: Información detallada en modo debug
-                    if (kDebugMode && _limitInfo != null)
+                    // ACTUALIZADO: Información detallada solo para usuarios premium en modo debug
+                    if (kDebugMode &&
+                        widget.user.subscription.isPremium &&
+                        _limitInfo != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Container(
@@ -401,7 +410,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'DEBUG INFO:',
+                                'DEBUG INFO (PREMIUM):',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,

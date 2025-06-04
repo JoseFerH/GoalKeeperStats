@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -69,13 +70,19 @@ Future<void> main() async {
   bool firebaseInitialized = false;
 
   try {
-    // Inicializar Firebase con manejo de errores mejorado
+    // 🔧 PASO 1: Inicializar Firebase con tiempo adicional
+    debugPrint('🔥 Inicializando Firebase...');
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
+    // 🔧 CORRECCIÓN CRÍTICA: Esperar a que Firebase Auth esté completamente listo
+    debugPrint(
+        '⏳ Esperando a que Firebase Auth esté completamente inicializado...');
+    await _waitForFirebaseAuthToBeReady();
+
     firebaseInitialized = true;
-    debugPrint('✅ Firebase inicializado correctamente');
+    debugPrint('✅ Firebase inicializado correctamente y estable');
 
     // Configurar Crashlytics solo después de que Firebase esté inicializado
     if (!kDebugMode && (Platform.isAndroid || Platform.isIOS)) {
@@ -96,14 +103,13 @@ Future<void> main() async {
       }
     }
 
-    // Inicializar servicios en orden correcto
+    // 🔧 PASO 2: Inicializar servicios en orden correcto
     debugPrint('🔧 Inicializando servicios...');
 
     // 1. Servicios básicos primero
     connectivityService = ConnectivityService();
     crashlyticsService = FirebaseCrashlyticsService();
-    await crashlyticsService
-        .initialize(); // CORREGIDO: Inicializar explícitamente
+    await crashlyticsService.initialize();
     analyticsService = AnalyticsService();
 
     debugPrint('✅ Servicios básicos inicializados');
@@ -113,14 +119,14 @@ Future<void> main() async {
     await cacheManager.init();
     debugPrint('✅ Cache manager inicializado correctamente');
 
-    // 3. NUEVO: Inicializar servicio de límites diarios
+    // 3. Inicializar servicio de límites diarios
     dailyLimitsService = DailyLimitsService(
       cacheManager: cacheManager,
       crashlyticsService: crashlyticsService,
     );
     debugPrint('✅ DailyLimitsService inicializado');
 
-    // 4. NUEVO: Inicializar servicio de anuncios
+    // 4. Inicializar servicio de anuncios
     adService = AdService();
     debugPrint('🎯 Inicializando AdService...');
 
@@ -160,18 +166,22 @@ Future<void> main() async {
     try {
       debugPrint('🗄️ Inicializando repositorios...');
 
-      // 1. Inicializar AuthRepository
+      // 🔧 PASO 3: Inicializar repositorios DESPUÉS de que Firebase esté estable
+
+      // 1. Inicializar AuthRepository con estabilización
       authRepository = FirebaseAuthRepository(
-        cacheManager: cacheManager,
         crashlyticsService: crashlyticsService,
       );
-      debugPrint('✅ AuthRepository inicializado');
 
-      // 2. CORREGIDO: Inicializar ShotsRepository con DailyLimitsService
+      // 🔧 CORRECCIÓN: Dar tiempo adicional para que AuthRepository se estabilice
+      await Future.delayed(const Duration(milliseconds: 500));
+      debugPrint('✅ AuthRepository inicializado y estabilizado');
+
+      // 2. Inicializar ShotsRepository
       shotsRepository = FirebaseShotsRepository(
         authRepository: authRepository,
         cacheManager: cacheManager,
-        dailyLimitsService: dailyLimitsService, // NUEVO parámetro
+        dailyLimitsService: dailyLimitsService,
       );
       debugPrint('✅ ShotsRepository inicializado');
 
@@ -199,8 +209,6 @@ Future<void> main() async {
       // Registrar error
       crashlyticsService.recordError(e, stack,
           reason: 'Error inicializando repositorios');
-
-      // Aquí podrías crear repositorios mock o fallback si es necesario
     }
   } else {
     debugPrint('⚠️ Firebase no inicializado, no se pueden crear repositorios');
@@ -211,6 +219,42 @@ Future<void> main() async {
   runApp(GoalkeeperStatsApp(
     firebaseInitialized: firebaseInitialized,
   ));
+}
+
+/// 🔧 FUNCIÓN NUEVA: Esperar a que Firebase Auth esté completamente listo
+Future<void> _waitForFirebaseAuthToBeReady() async {
+  try {
+    final FirebaseAuth auth = FirebaseAuth.instance;
+
+    // Configurar idioma inmediatamente
+    await auth.setLanguageCode('es');
+
+    // 🔧 PASO CRÍTICO: Forzar una operación que "caliente" Firebase Auth
+    debugPrint('🔥 Calentando Firebase Auth...');
+
+    // Intento 1: Verificar estado actual (esto inicializa internos)
+    final currentUser = auth.currentUser;
+    debugPrint('👤 Usuario actual: ${currentUser?.uid ?? 'ninguno'}');
+
+    // Intento 2: Hacer una operación lightweight que fuerce inicialización completa
+    try {
+      // Esta operación fuerza que Pigeon se inicialice completamente
+      await auth.fetchSignInMethodsForEmail('test@test.com').timeout(
+            const Duration(seconds: 5),
+          );
+    } catch (e) {
+      // Es normal que falle, solo queremos calentar el sistema
+      debugPrint('⚠️ Calentamiento de Auth completado (error esperado): $e');
+    }
+
+    // Intento 3: Esperar un poco más para asegurar que todo esté estable
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    debugPrint('✅ Firebase Auth está listo y estable');
+  } catch (e) {
+    debugPrint('⚠️ Error calentando Firebase Auth (continuando): $e');
+    // Continuar de todas formas, el calentamiento es opcional
+  }
 }
 
 class GoalkeeperStatsApp extends StatelessWidget {

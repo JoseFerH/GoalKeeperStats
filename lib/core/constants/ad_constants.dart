@@ -17,11 +17,11 @@ class AdConstants {
 
   // PRODUCTION - Reemplazar con tus IDs reales de AdMob
   static const String androidProdBannerId =
-      'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+      'ca-app-pub-5362666186946504/7956809194';
   static const String androidProdInterstitialId =
-      'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+      'ca-app-pub-5362666186946504/2719367332';
   static const String androidProdRewardedId =
-      'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX';
+      'ca-app-pub-5362666186946504/6444416974';
 
   // ==================== IDs DE ANUNCIOS PARA iOS ====================
 
@@ -44,7 +44,7 @@ class AdConstants {
   // ==================== CONFIGURACIÓN DE FRECUENCIA ====================
 
   /// Tiempo mínimo entre anuncios intersticiales (en segundos)
-  static const int interstitialCooldown = 180; // 3 minutos
+  static const int interstitialCooldown = 30; // 3 minutos
 
   /// Número mínimo de acciones antes de mostrar un intersticial
   static const int actionsBeforeInterstitial = 5;
@@ -116,7 +116,7 @@ class AdConstants {
   // ==================== CONFIGURACIÓN DE TESTING ====================
 
   /// Usar anuncios de test en modo debug
-  static const bool useTestAdsInDebug = true;
+  static const bool useTestAdsInDebug = false;
 
   /// IDs de dispositivos de test (añadir tu device ID aquí)
   static const List<String> testDeviceIds = [
