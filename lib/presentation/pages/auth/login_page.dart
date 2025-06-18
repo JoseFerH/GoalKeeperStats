@@ -1,3 +1,6 @@
+// lib/presentation/pages/auth/login_page.dart
+// 🔧 SOLUCIÓN: LoginPage mejorado para evitar race conditions
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -12,7 +15,6 @@ import 'package:goalkeeper_stats/presentation/pages/auth/register_page.dart';
 import 'package:goalkeeper_stats/presentation/pages/auth/forgot_password_page.dart';
 import 'package:provider/provider.dart';
 
-/// Página de inicio de sesión con soporte para email/contraseña y Google
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -26,35 +28,78 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isPasswordVisible = false;
 
-  @override
+  // 🔧 NUEVA VARIABLE: Control de inicialización
+  bool _hasInitialized = false;
+
   @override
   void initState() {
     super.initState();
 
-    // 🔧 CORRECCIÓN CRÍTICA: No disparar CheckAuthStatusEvent inmediatamente
-    // Dar tiempo a que Firebase Auth se estabilice completamente
-    _initializeWithDelay();
+    // 🔧 SOLUCIÓN PRINCIPAL: Inicialización súper robusta con múltiples delays
+    _performSuperRobustInitialization();
   }
 
-  /// 🔧 MÉTODO NUEVO: Inicialización con delay para evitar race conditions
-  Future<void> _initializeWithDelay() async {
+  /// 🔧 MÉTODO NUEVO: Inicialización súper robusta con verificaciones múltiples
+  Future<void> _performSuperRobustInitialization() async {
     try {
-      // Esperar a que el widget esté completamente montado
-      await Future.delayed(const Duration(milliseconds: 500));
+      debugPrint('🔍 Iniciando inicialización súper robusta de LoginPage...');
 
-      // Verificar que el widget sigue montado
+      // Espera 1: Widget completamente montado
+      await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
-      debugPrint('🔍 Verificando estado de autenticación con delay...');
+      // Espera 2: Firebase Auth debe estar completamente listo
+      await Future.delayed(const Duration(milliseconds: 1000));
+      if (!mounted) return;
 
-      // Ahora sí, disparar el evento de verificación
+      // Verificación: Estado del BLoC
+      final authBlocState = context.read<AuthBloc>().state;
+      debugPrint(
+          '📊 Estado inicial del AuthBloc: ${authBlocState.runtimeType}');
+
+      // Espera 3: Si el BLoC está en loading, esperar más
+      if (authBlocState is AuthLoadingState) {
+        debugPrint('⏳ BLoC en loading, esperando estabilización...');
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (!mounted) return;
+      }
+
+      // Espera 4: Verificación de conectividad (opcional pero útil)
+      try {
+        final connectivityService =
+            Provider.of<ConnectivityService>(context, listen: false);
+        final isConnected = await connectivityService.checkConnectivity();
+        debugPrint('🌐 Estado de conectividad: $isConnected');
+      } catch (e) {
+        debugPrint('⚠️ Error verificando conectividad en init: $e');
+      }
+
+      // Espera 5: Final - asegurar que todo esté estable
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+
+      // Marcar como inicializado
+      _hasInitialized = true;
+      debugPrint('✅ LoginPage inicializado completamente');
+
+      // AHORA SÍ: Disparar CheckAuthStatusEvent con Firebase completamente listo
+      debugPrint(
+          '🚀 Disparando CheckAuthStatusEvent con sistema completamente estable');
       context.read<AuthBloc>().add(CheckAuthStatusEvent());
-    } catch (e) {
-      debugPrint('⚠️ Error en inicialización con delay: $e');
-      // Si hay error, intentar de todas formas después de más tiempo
+    } catch (e, stack) {
+      debugPrint('❌ Error en inicialización súper robusta: $e');
+
+      // Registrar error pero intentar inicialización básica
+      try {
+        FirebaseCrashlytics.instance.recordError(e, stack,
+            reason: 'Error en inicialización súper robusta de LoginPage');
+      } catch (_) {}
+
+      // Fallback: Inicialización básica después de más tiempo
       if (mounted) {
-        await Future.delayed(const Duration(milliseconds: 1000));
-        if (mounted) {
+        await Future.delayed(const Duration(seconds: 3));
+        if (mounted && !_hasInitialized) {
+          _hasInitialized = true;
           context.read<AuthBloc>().add(CheckAuthStatusEvent());
         }
       }
@@ -246,7 +291,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 16),
 
-                          // NUEVO: Link de recuperación de contraseña
+                          // Link de recuperación de contraseña
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
@@ -331,7 +376,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 24),
 
-                // NUEVO: Link para registro
+                // Link para registro
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).push(
@@ -380,14 +425,28 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  /// 🔧 MÉTODO CORREGIDO: Manejo de email sign-in con mejores validaciones
+  /// 🔧 MÉTODO MEJORADO: Email sign-in con validaciones súper robustas
   void _handleEmailSignIn() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     try {
-      // 🔧 VALIDACIÓN ADICIONAL: Verificar estado del BLoC
+      // 🔧 VALIDACIÓN 1: Sistema debe estar inicializado
+      if (!_hasInitialized) {
+        debugPrint('⏳ Sistema aún no inicializado, esperando...');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'La aplicación se está inicializando, por favor espera...'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // 🔧 VALIDACIÓN 2: Estado del BLoC
       final authBlocState = context.read<AuthBloc>().state;
       if (authBlocState is AuthLoadingState) {
         debugPrint('⏳ AuthBloc ocupado, no procesar email sign-in');
@@ -401,7 +460,7 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      // Verificar conectividad
+      // 🔧 VALIDACIÓN 3: Verificar conectividad
       try {
         final connectivityService =
             Provider.of<ConnectivityService>(context, listen: false);
@@ -423,18 +482,17 @@ class _LoginPageState extends State<LoginPage> {
         // Continuar sin verificación
       }
 
-      // Registrar evento de analítica
+      // 🔧 VALIDACIÓN 4: Analytics
       try {
         AnalyticsService()
             .logEvent(name: 'login_attempt', parameters: {'method': 'email'});
       } catch (e) {
         debugPrint("⚠️ Error en analytics para email: $e");
-        // Continuar sin analytics
       }
 
-      // 🔧 ESPERA ADICIONAL: Para email también, evitar race conditions
-      debugPrint('⏳ Preparando email sign-in...');
-      await Future.delayed(const Duration(milliseconds: 200));
+      // 🔧 ESPERA FINAL: Para email también, evitar cualquier race condition
+      debugPrint('⏳ Preparando email sign-in con sistema estable...');
+      await Future.delayed(const Duration(milliseconds: 300));
 
       if (!mounted) return;
 
@@ -460,11 +518,25 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// 🔧 MÉTODO CORREGIDO: Manejo de Google Sign-In con mejores validaciones
+  /// 🔧 MÉTODO SÚPER MEJORADO: Google Sign-In con todas las validaciones
   Widget _buildGoogleSignInButton(BuildContext context) {
     void attemptSignIn() async {
       try {
-        // 🔧 VALIDACIÓN ADICIONAL: Verificar que el BLoC esté listo
+        // 🔧 VALIDACIÓN 1: Sistema debe estar completamente inicializado
+        if (!_hasInitialized) {
+          debugPrint('⏳ Sistema aún no inicializado para Google Sign-In');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'La aplicación se está inicializando, por favor espera...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+
+        // 🔧 VALIDACIÓN 2: Estado del BLoC
         final authBlocState = context.read<AuthBloc>().state;
         if (authBlocState is AuthLoadingState) {
           debugPrint('⏳ AuthBloc ocupado, esperando...');
@@ -479,7 +551,7 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        // Verificar conectividad
+        // 🔧 VALIDACIÓN 3: Conectividad
         try {
           final connectivityService =
               Provider.of<ConnectivityService>(context, listen: false);
@@ -498,31 +570,29 @@ class _LoginPageState extends State<LoginPage> {
           }
         } catch (e) {
           debugPrint("⚠️ Error al verificar conectividad: $e");
-          // Continuar sin verificación de conectividad
         }
 
-        // Registrar evento de analytics
+        // 🔧 VALIDACIÓN 4: Analytics
         try {
           AnalyticsService().logEvent(
               name: 'login_attempt', parameters: {'method': 'google'});
         } catch (e) {
           debugPrint("⚠️ Error en analytics: $e");
-          // Continuar sin analytics
         }
 
-        // 🔧 NUEVA VALIDACIÓN: Esperar un poco antes de intentar login
-        // Esto ayuda a evitar el race condition con Firebase Auth
-        debugPrint('⏳ Preparando Google Sign-In...');
-        await Future.delayed(const Duration(milliseconds: 300));
+        // 🔧 ESPERA CRÍTICA: Sistema completamente estable antes de Google Sign-In
+        debugPrint(
+            '⏳ Preparando Google Sign-In con Firebase completamente estable...');
+        await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
 
         // Intentar el login
+        debugPrint('🚀 Disparando Google Sign-In con sistema súper estable');
         context.read<AuthBloc>().add(SignInWithGoogleEvent());
       } catch (e) {
         debugPrint("❌ Error general en attemptSignIn: $e");
 
-        // Mostrar error al usuario
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

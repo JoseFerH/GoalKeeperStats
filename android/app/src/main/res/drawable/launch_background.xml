@@ -1,12 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Splash screen personalizado para Goalkeeper Stats -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+    <!-- Fondo con gradiente verde -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#388E3C"
+                android:endColor="#1B5E20"
+                android:type="linear" />
+        </shape>
+    </item>
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+    <!-- Logo centrado -->
+    <item android:gravity="center">
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@drawable/splash_logo" />
+    </item>
+
+    <!-- Indicador de carga en la parte inferior -->
+    <item android:gravity="bottom|center_horizontal">
+        <inset android:insetBottom="120dp">
+            <shape android:shape="oval">
+                <size 
+                    android:width="40dp" 
+                    android:height="40dp" />
+                <solid android:color="#80FFFFFF" />
+            </shape>
+        </inset>
+    </item>
+
+    <!-- Texto de marca en la parte inferior -->
+    <item android:gravity="bottom|center_horizontal">
+        <inset android:insetBottom="60dp">
+            <shape android:shape="rectangle">
+                <size 
+                    android:width="200dp" 
+                    android:height="40dp" />
+                <solid android:color="@android:color/transparent" />
+            </shape>
+        </inset>
+    </item>
 </layer-list>

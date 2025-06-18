@@ -301,6 +301,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       // Crear una copia actualizada del usuario
       final updatedUser = widget.user.copyWith(
+        userId: widget.user.userId,
         name: updatedName,
         photoUrl: updatedPhotoUrl,
         team: updatedTeam.isEmpty ? null : updatedTeam,

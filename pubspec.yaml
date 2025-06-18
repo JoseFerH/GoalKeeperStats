@@ -20,7 +20,7 @@ dependencies:
   # Firebase y backend - VERSIONES CORREGIDAS Y SIMPLIFICADAS
   firebase_core: ^2.24.2
   firebase_auth: 4.15.3        # Versión específica que funciona
-  cloud_firestore: ^4.13.6
+  cloud_firestore: ^4.13.6 
   firebase_analytics: ^10.7.4
   firebase_crashlytics: ^3.4.9
   

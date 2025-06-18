@@ -88,7 +88,7 @@ class LocalAuthRepository implements AuthRepository {
     _isSignedIn = true;
 
     // Crear usuario con el email proporcionado
-    final user = _fakeUser.copyWith(email: email);
+    final user = _fakeUser.copyWith(email: email, userId: '');
 
     // Emitir cambio en el stream
     _authStateController.add(user);
@@ -243,7 +243,8 @@ class LocalAuthRepository implements AuthRepository {
       String userId, SubscriptionInfo subscription) async {
     print("LocalAuthRepository.updateSubscription llamado");
     // Crear un usuario actualizado
-    final updatedUser = _fakeUser.copyWith(subscription: subscription);
+    final updatedUser =
+        _fakeUser.copyWith(subscription: subscription, userId: '');
 
     // Simular retraso de red
     await Future.delayed(const Duration(milliseconds: 300));
@@ -265,7 +266,7 @@ class LocalAuthRepository implements AuthRepository {
       String userId, UserSettings settings) async {
     print("LocalAuthRepository.updateUserSettings llamado");
     // Crear un usuario actualizado
-    final updatedUser = _fakeUser.copyWith(settings: settings);
+    final updatedUser = _fakeUser.copyWith(settings: settings, userId: '');
 
     // Simular retraso de red
     await Future.delayed(const Duration(milliseconds: 300));

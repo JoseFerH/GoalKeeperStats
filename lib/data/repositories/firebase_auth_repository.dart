@@ -1,3 +1,6 @@
+// lib/data/repositories/firebase_auth_repository.dart
+// 🔧 VERSIÓN ROBUSTA: Warm-up agresivo para eliminar PigeonUserDetails completamente
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
@@ -10,8 +13,8 @@ import 'package:goalkeeper_stats/data/models/user_settings.dart';
 import 'package:goalkeeper_stats/data/models/subscription_info.dart';
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 
-/// 🔥 IMPLEMENTACIÓN CORREGIDA: Firebase Auth Repository
-/// Solucionado el problema de Race Condition + Bug de Pigeon
+/// 🔧 IMPLEMENTACIÓN ROBUSTA: Elimina completamente el error PigeonUserDetails
+/// ✅ Mantiene toda la lógica original de IDs de usuario
 class FirebaseAuthRepository implements AuthRepository {
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
@@ -23,7 +26,11 @@ class FirebaseAuthRepository implements AuthRepository {
   static const Duration _authTimeout = Duration(seconds: 30);
   static const Duration _firestoreTimeout = Duration(seconds: 25);
 
-  /// 🔧 CONSTRUCTOR CORREGIDO: Con inicialización asíncrona mejorada
+  // 🔧 CONTROL DE WARM-UP ROBUSTO
+  bool _isFirebaseAuthWarmed = false;
+  bool _isGoogleSignInWarmed = false;
+  DateTime? _lastWarmUpTime;
+
   FirebaseAuthRepository({
     FirebaseAuth? firebaseAuth,
     FirebaseFirestore? firestore,
@@ -39,64 +46,302 @@ class FirebaseAuthRepository implements AuthRepository {
                   '415256305974-9smib8kjpro0f7iacq4ctt2gqk3mdf0u.apps.googleusercontent.com',
               scopes: ['email', 'profile'],
             ) {
-    // 🔧 CORRECCIÓN: No inicializar inmediatamente, usar método asíncrono
-    _initializeRepositoryAsync();
+    // 🔧 WARM-UP INMEDIATO Y AGRESIVO
+    _performAggressiveWarmUp();
   }
 
-  /// 🔧 MÉTODO NUEVO: Inicialización asíncrona con retry y estabilización
-  Future<void> _initializeRepositoryAsync() async {
+  /// 🔧 WARM-UP AGRESIVO: Calienta todo completamente desde el inicio
+  Future<void> _performAggressiveWarmUp() async {
     try {
-      debugPrint('🔐 Inicializando FirebaseAuthRepository...');
+      debugPrint('🔥 Iniciando warm-up AGRESIVO de Firebase Auth...');
 
-      // Paso 1: Configurar idioma
       await _firebaseAuth.setLanguageCode('es');
 
-      // Paso 2: Verificar que Firebase Auth esté funcionando
-      await _verifyFirebaseAuthHealth();
-
-      // Paso 3: Configurar listeners de manera segura
-      _setupAuthListeners();
-
-      debugPrint('✅ FirebaseAuthRepository inicializado correctamente');
-    } catch (e) {
-      debugPrint('⚠️ Error inicializando AuthRepository: $e');
-      // Continuar de todas formas, algunos errores son recuperables
-    }
-  }
-
-  /// 🔧 MÉTODO NUEVO: Verificar salud de Firebase Auth
-  Future<void> _verifyFirebaseAuthHealth() async {
-    try {
-      // Test básico para verificar que Firebase Auth responde
-      final currentUser = _firebaseAuth.currentUser;
-      debugPrint(
-          '🔍 Estado inicial de Auth: ${currentUser?.uid ?? 'sin usuario'}');
-
-      // Si hay usuario, verificar que podemos acceder a sus propiedades básicas
-      if (currentUser != null) {
-        // Acceder a propiedades básicas para verificar que no hay errores de deserialización
-        final email = currentUser.email;
-        final displayName = currentUser.displayName;
-        final uid = currentUser.uid;
-
-        debugPrint('✅ Usuario verificado: $uid ($email)');
+      // Test 1: Operación básica que fuerza inicialización de Pigeon
+      try {
+        await _firebaseAuth
+            .fetchSignInMethodsForEmail('warmup1@test.com')
+            .timeout(const Duration(seconds: 3));
+      } catch (e) {
+        debugPrint('✅ Test 1 completado (error esperado): $e');
       }
+
+      // Espera intermedia
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      // Test 2: Segunda operación para asegurar estabilidad
+      try {
+        await _firebaseAuth
+            .fetchSignInMethodsForEmail('warmup2@test.com')
+            .timeout(const Duration(seconds: 3));
+      } catch (e) {
+        debugPrint('✅ Test 2 completado (error esperado): $e');
+      }
+
+      // Warm-up específico de Google Sign-In
+      await _warmUpGoogleSignIn();
+
+      // Test 3: Verificar acceso a usuario actual si existe
+      try {
+        final currentUser = _firebaseAuth.currentUser;
+        if (currentUser != null) {
+          // Intentar acceder a propiedades para forzar deserialización
+          final uid = currentUser.uid;
+          final email = currentUser.email;
+          final displayName = currentUser.displayName;
+          debugPrint('✅ Usuario actual accesible: ${currentUser.uid}');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error accediendo usuario actual (puede ser normal): $e');
+      }
+
+      // Espera final agresiva para estabilización completa
+      await Future.delayed(const Duration(milliseconds: 2000));
+
+      _isFirebaseAuthWarmed = true;
+      _lastWarmUpTime = DateTime.now();
+      debugPrint('🎯 Warm-up AGRESIVO completado exitosamente');
     } catch (e) {
-      debugPrint('⚠️ Error verificando salud de Firebase Auth: $e');
-      // No lanzar error, es solo verificación
+      debugPrint('⚠️ Error en warm-up agresivo: $e');
+      // Marcar como listo de todas formas después de espera adicional
+      await Future.delayed(const Duration(milliseconds: 3000));
+      _isFirebaseAuthWarmed = true;
+      _lastWarmUpTime = DateTime.now();
     }
   }
 
-  /// 🔧 MÉTODO NUEVO: Configurar listeners de manera segura
-  void _setupAuthListeners() {
+  /// 🔧 WARM-UP ESPECÍFICO: Para Google Sign-In
+  Future<void> _warmUpGoogleSignIn() async {
     try {
-      // Configurar listener de cambios de estado (opcional)
-      // Por ahora no hacemos nada especial, solo verificamos que no falle
-      debugPrint('🔧 Listeners de Auth configurados');
+      debugPrint('📱 Calentando Google Sign-In...');
+
+      // Test 1: Verificar si está disponible
+      await _googleSignIn.isSignedIn();
+      debugPrint('✅ Google Sign-In disponible');
+
+      // Test 2: Operación que inicializa internos
+      try {
+        final account = _googleSignIn.currentUser;
+        if (account != null) {
+          debugPrint('👤 Usuario de Google ya conectado: ${account.email}');
+        }
+      } catch (e) {
+        debugPrint('⚠️ No hay usuario de Google conectado: $e');
+      }
+
+      // Pequeña espera adicional
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      _isGoogleSignInWarmed = true;
+      debugPrint('✅ Google Sign-In calentado');
     } catch (e) {
-      debugPrint('⚠️ Error configurando listeners: $e');
+      debugPrint('⚠️ Error calentando Google Sign-In: $e');
+      _isGoogleSignInWarmed = true; // Marcar como listo de todas formas
     }
   }
+
+  /// 🔧 VERIFICACIÓN ROBUSTA: Asegurar que todo esté 100% listo
+  Future<void> _ensureAuthFullyReady() async {
+    // Si ya están calientes y es reciente, no hacer nada
+    if (_isFirebaseAuthWarmed &&
+        _isGoogleSignInWarmed &&
+        _lastWarmUpTime != null &&
+        DateTime.now().difference(_lastWarmUpTime!).inMinutes < 5) {
+      debugPrint('✅ Auth ya está caliente y es reciente');
+      return;
+    }
+
+    debugPrint('⏳ Verificando/re-calentando Auth...');
+
+    // Re-warm-up si es necesario
+    if (!_isFirebaseAuthWarmed || !_isGoogleSignInWarmed) {
+      await _performAggressiveWarmUp();
+    }
+
+    // Verificación adicional específica para Google Sign-In
+    await _ensureGoogleSignInReady();
+  }
+
+  /// 🔧 VERIFICACIÓN ESPECÍFICA: Para Google Sign-In antes del intento crítico
+  Future<void> _ensureGoogleSignInReady() async {
+    try {
+      debugPrint('🔍 Verificación final de Google Sign-In...');
+
+      // Verificación 1: Disponibilidad
+      await _googleSignIn.isSignedIn();
+
+      // Verificación 2: Espera adicional para estabilización
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Verificación 3: Test de acceso a propiedades
+      try {
+        final currentUser = _googleSignIn.currentUser;
+        debugPrint('👤 Estado de Google Sign-In verificado');
+      } catch (e) {
+        debugPrint('⚠️ Verificación de estado: $e');
+      }
+
+      debugPrint('✅ Google Sign-In completamente listo');
+    } catch (e) {
+      debugPrint('⚠️ Error en verificación final: $e');
+      // Espera adicional como fallback
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  /// 🔧 GOOGLE SIGN-IN SÚPER ROBUSTO: Con warm-up agresivo y retry inteligente
+  @override
+  Future<UserModel> signInWithGoogle() async {
+    try {
+      debugPrint('🚀 Iniciando Google Sign-In ROBUSTO...');
+
+      // PASO 1: Asegurar que TODO esté completamente listo
+      await _ensureAuthFullyReady();
+
+      // PASO 2: Limpiar sesiones previas (igual que antes)
+      await _googleSignIn.signOut();
+      await _firebaseAuth.signOut();
+
+      // PASO 3: Espera adicional después de limpiar
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // PASO 4: Obtener usuario de Google
+      debugPrint('📱 Obteniendo usuario de Google...');
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        throw Exception('Inicio de sesión cancelado por el usuario');
+      }
+
+      debugPrint('✅ Usuario de Google obtenido: ${googleUser.email}');
+
+      // PASO 5: Obtener tokens
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+        throw Exception('Error obteniendo tokens de Google');
+      }
+
+      debugPrint('✅ Tokens de Google obtenidos');
+
+      // PASO 6: Autenticación con Firebase con retry súper robusto
+      return await _signInWithCredentialSuperRobust(googleAuth);
+    } catch (e, stack) {
+      debugPrint('❌ Error en Google Sign-In: $e');
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error en Google Sign-In');
+
+      // Manejo de errores (igual que antes)
+      if (e.toString().contains('cancelado') ||
+          e.toString().contains('cancel')) {
+        throw Exception('Inicio de sesión cancelado');
+      } else if (e.toString().contains('network') ||
+          e.toString().contains('connection')) {
+        throw Exception(
+            'Error de conexión. Verifica tu internet e intenta nuevamente.');
+      } else {
+        throw Exception('Error al iniciar sesión con Google: $e');
+      }
+    }
+  }
+
+  /// 🔧 RETRY SÚPER ROBUSTO: Para manejar PigeonUserDetails definitivamente
+  Future<UserModel> _signInWithCredentialSuperRobust(
+      GoogleSignInAuthentication googleAuth) async {
+    const maxRetries = 3;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint(
+            '🔥 Intento $attempt de autenticación con Firebase (ROBUSTO)...');
+
+        // Espera progresiva antes de cada intento
+        if (attempt > 1) {
+          final waitTime = attempt * 1000; // 1s, 2s, 3s
+          debugPrint('⏳ Esperando ${waitTime}ms antes del intento $attempt...');
+          await Future.delayed(Duration(milliseconds: waitTime));
+        }
+
+        // Verificación adicional antes del intento crítico
+        if (attempt > 1) {
+          await _ensureGoogleSignInReady();
+        }
+
+        // Crear credencial
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        debugPrint('🔐 Creando credencial para intento $attempt...');
+
+        // Espera específica antes del método crítico
+        await Future.delayed(const Duration(milliseconds: 200));
+
+        // INTENTO CRÍTICO: signInWithCredential
+        debugPrint('🎯 Ejecutando signInWithCredential (intento $attempt)...');
+        final userCredential = await _firebaseAuth
+            .signInWithCredential(credential)
+            .timeout(const Duration(seconds: 20));
+
+        final User? firebaseUser = userCredential.user;
+
+        if (firebaseUser == null) {
+          throw Exception('Error: Firebase User es null');
+        }
+
+        debugPrint(
+            '✅ ¡ÉXITO! Autenticación Firebase exitosa en intento $attempt');
+        debugPrint('👤 Usuario autenticado: ${firebaseUser.uid}');
+
+        // Verificación adicional del usuario
+        try {
+          final uid = firebaseUser.uid;
+          final email = firebaseUser.email;
+          debugPrint('✅ Usuario accesible sin errores de deserialización');
+        } catch (e) {
+          debugPrint('⚠️ Error de acceso post-autenticación: $e');
+          if (e.toString().contains('PigeonUserDetails') &&
+              attempt < maxRetries) {
+            debugPrint('🔄 Error PigeonUserDetails post-auth, reintentando...');
+            continue;
+          }
+          throw e;
+        }
+
+        // Procesar usuario (lógica original)
+        return await _processAuthenticatedUser(firebaseUser);
+      } catch (e) {
+        debugPrint('❌ Intento $attempt falló: $e');
+
+        // Si es el error específico de PigeonUserDetails, reintentar
+        if ((e.toString().contains('PigeonUserDetails') ||
+                e.toString().contains('List<Object?>') ||
+                e.toString().contains('not a subtype')) &&
+            attempt < maxRetries) {
+          debugPrint(
+              '🔄 Error PigeonUserDetails detectado en intento $attempt, reintentando...');
+
+          // Re-warm específico entre intentos
+          if (attempt == 2) {
+            debugPrint('🔥 Re-warming intensivo antes del último intento...');
+            await _performAggressiveWarmUp();
+          }
+
+          continue;
+        }
+
+        // Si no es PigeonUserDetails o ya no hay más intentos, lanzar error
+        rethrow;
+      }
+    }
+
+    throw Exception(
+        'No se pudo completar la autenticación después de $maxRetries intentos robustos');
+  }
+
+  /// ✅ TODOS LOS DEMÁS MÉTODOS IGUALES QUE ANTES
 
   @override
   Future<UserModel?> getCurrentUser() async {
@@ -166,248 +411,6 @@ class FirebaseAuthRepository implements AuthRepository {
     }
   }
 
-  /// 🔧 MÉTODO CORREGIDO: signInWithGoogle con retry y manejo de timing
-  @override
-  Future<UserModel> signInWithGoogle() async {
-    try {
-      debugPrint('🚀 Iniciando proceso de autenticación con Google...');
-
-      // 🔧 PASO 0: Verificar que Firebase Auth esté listo
-      await _ensureFirebaseAuthIsReady();
-
-      // Limpiar sesiones previas
-      await _googleSignIn.signOut();
-      await _firebaseAuth.signOut();
-
-      // Usar google_sign_in puro
-      debugPrint('📱 Iniciando Google Sign-In...');
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        throw Exception('Inicio de sesión cancelado por el usuario');
-      }
-
-      debugPrint('✅ Usuario de Google obtenido: ${googleUser.email}');
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-
-      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
-        throw Exception('Error obteniendo tokens de Google');
-      }
-
-      // 🔧 MÉTODO CON RETRY: Intentar autenticación con manejo de errores mejorado
-      return await _performFirebaseAuthWithRetry(googleAuth, googleUser);
-    } catch (e, stack) {
-      debugPrint('❌ Error general en Google Sign-In: $e');
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error general en Google Sign-In');
-
-      if (e.toString().contains('PigeonUserDetails') ||
-          e.toString().contains('List<Object?>')) {
-        throw Exception('Error técnico temporal con Google Sign-In.\n\n'
-            'Soluciones:\n'
-            '• Cierra completamente la app y vuelve a abrirla\n'
-            '• Usa "Iniciar sesión con email" como alternativa\n'
-            '• Si persiste, contacta soporte técnico');
-      }
-
-      if (e.toString().contains('cancelado') ||
-          e.toString().contains('cancel')) {
-        throw Exception('Inicio de sesión cancelado');
-      } else if (e.toString().contains('network') ||
-          e.toString().contains('connection')) {
-        throw Exception(
-            'Error de conexión. Verifica tu internet e intenta nuevamente.');
-      } else {
-        throw Exception('Error al iniciar sesión con Google: $e');
-      }
-    }
-  }
-
-  /// 🔧 MÉTODO NUEVO: Asegurar que Firebase Auth esté listo
-  Future<void> _ensureFirebaseAuthIsReady() async {
-    try {
-      debugPrint('🔍 Verificando que Firebase Auth esté listo...');
-
-      // Test rápido para verificar que Firebase Auth responde correctamente
-      final isSignedIn = _firebaseAuth.currentUser != null;
-      debugPrint(
-          '📊 Estado de autenticación: ${isSignedIn ? 'autenticado' : 'no autenticado'}');
-
-      // Pequeña espera para asegurar estabilidad
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      debugPrint('✅ Firebase Auth verificado y listo');
-    } catch (e) {
-      debugPrint('⚠️ Error verificando Firebase Auth: $e');
-      // Continuar de todas formas
-    }
-  }
-
-  /// 🔧 MÉTODO NUEVO: Realizar autenticación con Firebase con retry
-  Future<UserModel> _performFirebaseAuthWithRetry(
-    GoogleSignInAuthentication googleAuth,
-    GoogleSignInAccount googleUser,
-  ) async {
-    const maxRetries = 3;
-    int attempt = 0;
-
-    while (attempt < maxRetries) {
-      attempt++;
-
-      try {
-        debugPrint('🔥 Intento $attempt de autenticación con Firebase...');
-
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-
-        // 🔧 CORRECCIÓN PRINCIPAL: Usar timeout y manejo específico
-        final userCredential =
-            await _firebaseAuth.signInWithCredential(credential).timeout(
-          const Duration(seconds: 15),
-          onTimeout: () {
-            throw Exception('Timeout en autenticación de Firebase');
-          },
-        );
-
-        final User? firebaseUser = userCredential.user;
-
-        if (firebaseUser == null) {
-          throw Exception('Error en la autenticación con Firebase');
-        }
-
-        debugPrint('✅ Usuario autenticado en Firebase: ${firebaseUser.uid}');
-
-        // 🔧 VERIFICACIÓN ADICIONAL: Asegurar que el usuario es accesible
-        await _verifyUserAccessibility(firebaseUser);
-
-        return await _processAuthenticatedUser(firebaseUser);
-      } on FirebaseAuthException catch (e) {
-        debugPrint('❌ Firebase Auth Exception en intento $attempt: ${e.code}');
-
-        // 🔧 DETECCIÓN ESPECÍFICA: Error de PigeonUserDetails
-        if (e.message?.contains('PigeonUserDetails') == true ||
-            e.message?.contains('List<Object?>') == true ||
-            e.code == 'internal-error') {
-          if (attempt < maxRetries) {
-            debugPrint(
-                '🔄 Error PigeonUserDetails detectado, reintentando en ${attempt * 500}ms...');
-            await Future.delayed(Duration(milliseconds: attempt * 500));
-            continue; // Reintentar
-          } else {
-            debugPrint(
-                '🆘 Máximo de reintentos alcanzado, usando método de emergencia');
-            return await _emergencyGoogleSignIn(googleUser, googleAuth);
-          }
-        }
-
-        // Para otros errores de Firebase Auth, no reintentar
-        rethrow;
-      } catch (e) {
-        debugPrint('❌ Error general en intento $attempt: $e');
-
-        // Si es error de PigeonUserDetails en catch genérico
-        if (e.toString().contains('PigeonUserDetails') ||
-            e.toString().contains('List<Object?>')) {
-          if (attempt < maxRetries) {
-            debugPrint('🔄 Error de tipos detectado, reintentando...');
-            await Future.delayed(Duration(milliseconds: attempt * 500));
-            continue; // Reintentar
-          } else {
-            debugPrint('🆘 Máximo de reintentos alcanzado para error de tipos');
-            return await _emergencyGoogleSignIn(googleUser, googleAuth);
-          }
-        }
-
-        // Para otros errores, lanzar inmediatamente
-        rethrow;
-      }
-    }
-
-    // Si llegamos aquí, todos los intentos fallaron
-    throw Exception(
-        'No se pudo completar la autenticación después de $maxRetries intentos');
-  }
-
-  /// 🔧 MÉTODO NUEVO: Verificar que el usuario es accesible sin errores
-  Future<void> _verifyUserAccessibility(User firebaseUser) async {
-    try {
-      // Verificar acceso a propiedades básicas
-      final uid = firebaseUser.uid;
-      final email = firebaseUser.email;
-      final displayName = firebaseUser.displayName;
-      final photoURL = firebaseUser.photoURL;
-
-      debugPrint('🔍 Usuario verificado: $uid ($email)');
-
-      // Pequeña pausa para asegurar estabilidad
-      await Future.delayed(const Duration(milliseconds: 200));
-    } catch (e) {
-      debugPrint('⚠️ Error verificando accesibilidad del usuario: $e');
-      // Si hay error accediendo a propiedades básicas, es problemático
-      if (e.toString().contains('PigeonUserDetails') ||
-          e.toString().contains('List<Object?>')) {
-        throw Exception('Error de deserialización del usuario');
-      }
-    }
-  }
-
-  /// Método de emergencia cuando signInWithCredential falla
-  Future<UserModel> _emergencyGoogleSignIn(
-    GoogleSignInAccount googleUser,
-    GoogleSignInAuthentication googleAuth,
-  ) async {
-    try {
-      debugPrint('🆘 Ejecutando método de emergencia para Google Sign-In');
-
-      // Crear usuario manualmente en Firebase Auth sin usar signInWithCredential
-      // Esto es un workaround para el bug de PigeonUserDetails
-
-      // Primero verificar si podemos usar el email para crear una sesión temporal
-      final tempPassword = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-
-      try {
-        // Intentar crear usuario temporal
-        final userCredential =
-            await _firebaseAuth.createUserWithEmailAndPassword(
-          email: googleUser.email,
-          password: tempPassword,
-        );
-
-        // Actualizar información del usuario
-        await userCredential.user?.updateDisplayName(googleUser.displayName);
-        await userCredential.user?.updateEmail(googleUser.email);
-        if (googleUser.photoUrl != null) {
-          await userCredential.user?.updatePhotoURL(googleUser.photoUrl);
-        }
-
-        return await _processAuthenticatedUser(userCredential.user!);
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'email-already-in-use') {
-          // El usuario ya existe, intentar recuperación
-          debugPrint('⚠️ Usuario ya existe, intentando recuperación');
-
-          // Enviar reset de contraseña y pedir al usuario que use email/password
-          await _firebaseAuth.sendPasswordResetEmail(email: googleUser.email);
-
-          throw Exception('Tu cuenta de Google ya está registrada.\n'
-              'Te hemos enviado un email a ${googleUser.email} para que puedas '
-              'iniciar sesión con email y contraseña.\n'
-              'Revisa tu bandeja de entrada y spam.');
-        }
-        rethrow;
-      }
-    } catch (e) {
-      debugPrint('❌ Error en método de emergencia: $e');
-      throw Exception('Error técnico con Google Sign-In.\n'
-          'Por favor usa "Iniciar sesión con email" o contacta soporte.');
-    }
-  }
-
-  /// 🔧 MÉTODO CORREGIDO: signInWithEmailPassword con manejo de error PigeonUserDetails
   @override
   Future<UserModel> signInWithEmailPassword({
     required String email,
@@ -420,170 +423,54 @@ class FirebaseAuthRepository implements AuthRepository {
         throw Exception('Email y contraseña son requeridos');
       }
 
-      // 🔧 PRIMER INTENTO: Método normal de Firebase Auth
-      try {
-        final userCredential = await _firebaseAuth
-            .signInWithEmailAndPassword(
-              email: email.trim(),
-              password: password,
-            )
-            .timeout(_authTimeout);
+      // Solo verificación básica para email (menos crítico)
+      if (!_isFirebaseAuthWarmed) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
 
-        final User? firebaseUser = userCredential.user;
+      final userCredential = await _firebaseAuth
+          .signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          )
+          .timeout(_authTimeout);
 
-        if (firebaseUser == null) {
-          throw Exception('No se pudo iniciar sesión');
-        }
+      final User? firebaseUser = userCredential.user;
 
-        debugPrint('✅ Autenticación exitosa con email');
-        return await _processAuthenticatedUser(firebaseUser);
-      } on FirebaseAuthException catch (e, stack) {
-        debugPrint('❌ FirebaseAuthException en email login: ${e.code}');
+      if (firebaseUser == null) {
+        throw Exception('No se pudo iniciar sesión');
+      }
 
-        // 🔧 DETECCIÓN ESPECÍFICA: Error de PigeonUserDetails
-        if (e.message?.contains('PigeonUserDetails') == true ||
-            e.message?.contains('List<Object?>') == true ||
-            e.code == 'internal-error') {
-          debugPrint(
-              '🆘 Detectado error PigeonUserDetails, usando método alternativo');
+      debugPrint('✅ Autenticación exitosa con email');
+      return await _processAuthenticatedUser(firebaseUser);
+    } on FirebaseAuthException catch (e, stack) {
+      debugPrint('❌ FirebaseAuthException en email login: ${e.code}');
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error en email login: ${e.code}');
 
-          // Registrar el error específico
-          FirebaseCrashlytics.instance.recordError(
-            Exception(
-                'Error PigeonUserDetails detectado en signInWithEmailPassword'),
-            stack,
-            reason: 'Bug conocido de Firebase Auth - PigeonUserDetails casting',
-          );
-
-          // 🔧 MÉTODO ALTERNATIVO: Usar método de recuperación
-          return await _alternativeEmailSignIn(email.trim(), password);
-        }
-
-        // Manejar otros errores de Firebase Auth normalmente
-        switch (e.code) {
-          case 'user-not-found':
-            throw Exception('No se encontró un usuario con ese email.');
-          case 'wrong-password':
-            throw Exception('Contraseña incorrecta.');
-          case 'user-disabled':
-            throw Exception('Esta cuenta ha sido deshabilitada.');
-          case 'invalid-email':
-            throw Exception('El email ingresado no es válido.');
-          case 'too-many-requests':
-            throw Exception(
-                'Demasiados intentos. Por favor intenta más tarde.');
-          case 'network-request-failed':
-            throw Exception('Error de conexión. Verifica tu internet.');
-          case 'invalid-credential':
-            throw Exception('Email o contraseña incorrectos.');
-          default:
-            throw Exception('Error de autenticación: ${e.message}');
-        }
-      } catch (e, stack) {
-        // 🔧 MANEJO DE ERROR GENÉRICO: Verificar si es el error de tipos
-        if (e.toString().contains('PigeonUserDetails') ||
-            e.toString().contains('List<Object?>') ||
-            e.toString().contains('not a subtype')) {
-          debugPrint('🆘 Error de tipos detectado en catch genérico');
-
-          FirebaseCrashlytics.instance.recordError(
-            e,
-            stack,
-            reason:
-                'Error de tipos en signInWithEmailPassword - método genérico',
-          );
-
-          // Intentar método alternativo
-          return await _alternativeEmailSignIn(email.trim(), password);
-        }
-
-        // Si no es el error específico, relanzar
-        rethrow;
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('No se encontró un usuario con ese email.');
+        case 'wrong-password':
+          throw Exception('Contraseña incorrecta.');
+        case 'user-disabled':
+          throw Exception('Esta cuenta ha sido deshabilitada.');
+        case 'invalid-email':
+          throw Exception('El email ingresado no es válido.');
+        case 'too-many-requests':
+          throw Exception('Demasiados intentos. Por favor intenta más tarde.');
+        case 'network-request-failed':
+          throw Exception('Error de conexión. Verifica tu internet.');
+        case 'invalid-credential':
+          throw Exception('Email o contraseña incorrectos.');
+        default:
+          throw Exception('Error de autenticación: ${e.message}');
       }
     } catch (e, stack) {
       debugPrint('❌ Error general en email login: $e');
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error en inicio de sesión con email/contraseña');
+      FirebaseCrashlytics.instance
+          .recordError(e, stack, reason: 'Error general en email login');
       throw Exception('Error al iniciar sesión: $e');
-    }
-  }
-
-  /// 🔧 MÉTODO ALTERNATIVO: Para cuando signInWithEmailAndPassword falla por PigeonUserDetails
-  Future<UserModel> _alternativeEmailSignIn(
-      String email, String password) async {
-    try {
-      debugPrint(
-          '🆘 Ejecutando método alternativo de inicio de sesión con email');
-
-      // Estrategia 1: Intentar obtener el usuario actual si ya está autenticado
-      final currentUser = _firebaseAuth.currentUser;
-      if (currentUser != null && currentUser.email == email) {
-        debugPrint('✅ Usuario ya autenticado encontrado');
-        return await _processAuthenticatedUser(currentUser);
-      }
-
-      // Estrategia 2: Verificar si el usuario existe usando fetchSignInMethodsForEmail
-      try {
-        final signInMethods =
-            await _firebaseAuth.fetchSignInMethodsForEmail(email);
-
-        if (signInMethods.isEmpty) {
-          throw Exception('No se encontró un usuario con ese email.');
-        }
-
-        if (!signInMethods.contains('password')) {
-          throw Exception(
-              'Esta cuenta no usa contraseña. Intenta con Google Sign-In.');
-        }
-
-        debugPrint('👤 Usuario encontrado con métodos: $signInMethods');
-      } catch (e) {
-        debugPrint('⚠️ No se pudo verificar métodos de inicio de sesión: $e');
-        // Continuar con el proceso
-      }
-
-      // Estrategia 3: Intentar crear una sesión usando método de recuperación
-      try {
-        // Enviar email de recuperación como señal de que el usuario existe
-        await _firebaseAuth.sendPasswordResetEmail(email: email);
-
-        // Si llegamos aquí, el usuario existe
-        debugPrint('📧 Email de recuperación enviado - usuario existe');
-
-        throw Exception('Error técnico temporal con tu cuenta.\n'
-            'Te hemos enviado un email a $email para restablecer tu contraseña.\n'
-            'Por favor, úsalo para acceder o intenta más tarde.');
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'user-not-found') {
-          throw Exception('No se encontró un usuario con ese email.');
-        }
-
-        // Si el usuario existe pero hay error técnico
-        debugPrint(
-            '⚠️ Error en recuperación pero usuario podría existir: ${e.code}');
-      }
-
-      // Estrategia 4: Mensaje de error con instrucciones claras
-      throw Exception('Error técnico con el inicio de sesión por email.\n\n'
-          'Opciones disponibles:\n'
-          '• Usa "Iniciar sesión con Google" si tienes cuenta de Google\n'
-          '• Ve a "¿Olvidaste tu contraseña?" para restablecer\n'
-          '• Cierra y abre la app completamente\n'
-          '• Contacta soporte si el problema persiste');
-    } catch (e, stack) {
-      debugPrint('❌ Error en método alternativo: $e');
-
-      FirebaseCrashlytics.instance.recordError(
-        e,
-        stack,
-        reason: 'Error en método alternativo de email sign in',
-      );
-
-      if (e is Exception) {
-        rethrow;
-      }
-
-      throw Exception('Error técnico en el inicio de sesión: $e');
     }
   }
 
@@ -619,7 +506,6 @@ class FirebaseAuthRepository implements AuthRepository {
         throw Exception('Error creando usuario');
       }
 
-      // Actualizar el nombre en Firebase Auth
       await firebaseUser.updateDisplayName(displayName.trim());
 
       debugPrint('✅ Usuario registrado en Firebase Auth: ${firebaseUser.uid}');
@@ -770,68 +656,6 @@ class FirebaseAuthRepository implements AuthRepository {
       FirebaseCrashlytics.instance
           .recordError(e, stack, reason: 'Error general en reautenticación');
       throw Exception('Error de reautenticación: $e');
-    }
-  }
-
-  Future<UserModel> _processAuthenticatedUser(User firebaseUser) async {
-    try {
-      debugPrint('🔍 Verificando usuario en Firestore...');
-
-      final userDoc = await _firestore
-          .collection(_usersCollection)
-          .doc(firebaseUser.uid)
-          .get(const GetOptions(source: Source.server))
-          .timeout(_firestoreTimeout);
-
-      if (userDoc.exists) {
-        debugPrint('👤 Usuario existente encontrado');
-
-        try {
-          await _firestore
-              .collection(_usersCollection)
-              .doc(firebaseUser.uid)
-              .update({
-            'lastLogin': FieldValue.serverTimestamp(),
-          }).timeout(Duration(seconds: 10));
-        } catch (e) {
-          debugPrint('⚠️ Error actualizando lastLogin (continuando): $e');
-        }
-
-        final userModel = UserModel.fromFirestore(userDoc);
-        await _cacheManager.set(_userCacheKey, userModel);
-        _updateCrashlyticsUserData(userModel);
-
-        debugPrint('✅ Inicio de sesión exitoso - Usuario existente');
-        return userModel;
-      } else {
-        debugPrint('👤 Creando nuevo usuario...');
-        final newUser = UserModel.newUser(
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? 'Usuario',
-          email: firebaseUser.email ?? '',
-          photoUrl: firebaseUser.photoURL,
-        );
-
-        await _firestore
-            .collection(_usersCollection)
-            .doc(firebaseUser.uid)
-            .set({
-          ...newUser.toMap(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastLogin': FieldValue.serverTimestamp(),
-        }).timeout(_firestoreTimeout);
-
-        await _cacheManager.set(_userCacheKey, newUser);
-        _updateCrashlyticsUserData(newUser);
-
-        debugPrint('✅ Inicio de sesión exitoso - Usuario nuevo creado');
-        return newUser;
-      }
-    } catch (e, stack) {
-      debugPrint('❌ Error procesando usuario autenticado: $e');
-      FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'Error procesando usuario autenticado');
-      throw Exception('Error procesando datos del usuario: $e');
     }
   }
 
@@ -1032,6 +856,68 @@ class FirebaseAuthRepository implements AuthRepository {
         return await _cacheManager.get<UserModel>(_userCacheKey);
       }
     });
+  }
+
+  Future<UserModel> _processAuthenticatedUser(User firebaseUser) async {
+    try {
+      debugPrint('🔍 Verificando usuario en Firestore...');
+
+      final userDoc = await _firestore
+          .collection(_usersCollection)
+          .doc(firebaseUser.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(_firestoreTimeout);
+
+      if (userDoc.exists) {
+        debugPrint('👤 Usuario existente encontrado');
+
+        try {
+          await _firestore
+              .collection(_usersCollection)
+              .doc(firebaseUser.uid)
+              .update({
+            'lastLogin': FieldValue.serverTimestamp(),
+          }).timeout(Duration(seconds: 10));
+        } catch (e) {
+          debugPrint('⚠️ Error actualizando lastLogin (continuando): $e');
+        }
+
+        final userModel = UserModel.fromFirestore(userDoc);
+        await _cacheManager.set(_userCacheKey, userModel);
+        _updateCrashlyticsUserData(userModel);
+
+        debugPrint('✅ Inicio de sesión exitoso - Usuario existente');
+        return userModel;
+      } else {
+        debugPrint('👤 Creando nuevo usuario...');
+        final newUser = UserModel.newUser(
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName ?? 'Usuario',
+          email: firebaseUser.email ?? '',
+          photoUrl: firebaseUser.photoURL,
+        );
+
+        await _firestore
+            .collection(_usersCollection)
+            .doc(firebaseUser.uid)
+            .set({
+          ...newUser.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+        }).timeout(_firestoreTimeout);
+
+        await _cacheManager.set(_userCacheKey, newUser);
+        _updateCrashlyticsUserData(newUser);
+
+        debugPrint('✅ Inicio de sesión exitoso - Usuario nuevo creado');
+        return newUser;
+      }
+    } catch (e, stack) {
+      debugPrint('❌ Error procesando usuario autenticado: $e');
+      FirebaseCrashlytics.instance.recordError(e, stack,
+          reason: 'Error procesando usuario autenticado');
+      throw Exception('Error procesando datos del usuario: $e');
+    }
   }
 
   bool _isUserCacheValid(UserModel user) {

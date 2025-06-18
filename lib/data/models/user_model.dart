@@ -68,6 +68,8 @@ class UserModel {
     return UserModel.fromMap(json);
   }
 
+  get userId => null;
+
   // Convertir a Map para Firestore
   Map<String, dynamic> toMap() {
     return {
@@ -102,6 +104,7 @@ class UserModel {
     String? team,
     SubscriptionInfo? subscription,
     UserSettings? settings,
+    required String userId,
   }) {
     return UserModel(
       id: id,
