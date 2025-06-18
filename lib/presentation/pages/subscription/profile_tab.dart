@@ -106,7 +106,7 @@ class _ProfileTabState extends State<ProfileTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Perfil y Configuración'),
+        //title: const Text('Perfil y Configuración'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

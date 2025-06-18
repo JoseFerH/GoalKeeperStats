@@ -595,7 +595,7 @@ class _StatsTabState extends State<StatsTab>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Estadísticas'),
+        //title: const Text('Estadísticas'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

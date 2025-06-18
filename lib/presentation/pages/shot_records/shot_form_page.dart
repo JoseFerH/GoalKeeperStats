@@ -193,7 +193,7 @@ class _ShotFormPageState extends State<ShotFormPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Registrar Tiro'),
+        //title: const Text('Registrar Tiro'),
         actions: [
           if (!_isConnected)
             IconButton(

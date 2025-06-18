@@ -30,12 +30,12 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
   bool _isLoading = false;
   String _searchQuery = '';
   String? _selectedType;
-  
+
   // Servicios
   final _cacheManager = CacheManager();
   final _crashlytics = FirebaseCrashlyticsService();
   final _connectivityService = ConnectivityService();
-  
+
   // Clave para caché
   late String _cacheKey;
   bool _isOffline = false;
@@ -47,27 +47,27 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
     _checkConnectivity();
     _loadMatches();
   }
-  
+
   @override
   void dispose() {
     super.dispose();
   }
-  
+
   Future<void> _checkConnectivity() async {
     bool connected = await _connectivityService.checkConnectivity();
     setState(() {
       _isOffline = !connected;
     });
-    
+
     // Suscribirse a cambios de conectividad
     _connectivityService.onConnectivityChanged.listen((result) {
       final wasOffline = _isOffline;
       setState(() {
-        _isOffline = result != ConnectivityResult.wifi && 
-                    result != ConnectivityResult.mobile &&
-                    result != ConnectivityResult.ethernet;
+        _isOffline = result != ConnectivityResult.wifi &&
+            result != ConnectivityResult.mobile &&
+            result != ConnectivityResult.ethernet;
       });
-      
+
       // Si recuperamos conexión, recargar datos
       if (wasOffline && !_isOffline) {
         _loadMatches(forceRefresh: true);
@@ -89,7 +89,7 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
       if (!forceRefresh) {
         cachedMatches = await _cacheManager.get<List<MatchModel>>(_cacheKey);
       }
-      
+
       if (cachedMatches != null && !forceRefresh) {
         // Usar datos de caché
         _matchesFuture = Future.value(cachedMatches);
@@ -98,7 +98,7 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         });
         return;
       }
-      
+
       // Si estamos offline y no hay caché, mostrar error
       if (_isOffline && cachedMatches == null) {
         setState(() {
@@ -118,19 +118,21 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         widget.user.id,
         twoWeeksAgo,
         twoWeeksLater,
-      ).then((matches) async {
+      )
+          .then((matches) async {
         // Guardar en caché
-        await _cacheManager.set<List<MatchModel>>(_cacheKey, matches, duration: 3600); // 1 hora
+        await _cacheManager.set<List<MatchModel>>(_cacheKey, matches,
+            duration: 3600); // 1 hora
         return matches;
       }).catchError((error) {
         // Registrar error en Crashlytics
         _crashlytics.recordError(
-          error, 
+          error,
           StackTrace.current,
           reason: 'Error al cargar partidos',
           information: ['userId: ${widget.user.id}'],
         );
-        
+
         // Si hay datos en caché, usarlos como fallback
         if (cachedMatches != null) {
           return cachedMatches;
@@ -138,7 +140,7 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         throw error;
       });
     } catch (e) {
-      _crashlytics.recordError(e, StackTrace.current, 
+      _crashlytics.recordError(e, StackTrace.current,
           reason: 'Error inesperado al cargar partidos');
       _matchesFuture = Future.error(e);
     } finally {
@@ -154,7 +156,7 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Seleccionar Partido'),
+        //title: const Text('Seleccionar Partido'),
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list),
@@ -187,7 +189,7 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
                 ],
               ),
             ),
-          
+
           // Barra de búsqueda
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -250,21 +252,24 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _isOffline ? () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No es posible crear partidos sin conexión a internet'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        } : () async {
-          // Navegar para crear un nuevo partido
-          if (widget.onMatchCreated != null) {
-            widget.onMatchCreated!();
-          }
-          // Recargar la lista después de crear
-          _loadMatches(forceRefresh: true);
-        },
+        onPressed: _isOffline
+            ? () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'No es posible crear partidos sin conexión a internet'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            : () async {
+                // Navegar para crear un nuevo partido
+                if (widget.onMatchCreated != null) {
+                  widget.onMatchCreated!();
+                }
+                // Recargar la lista después de crear
+                _loadMatches(forceRefresh: true);
+              },
         child: const Icon(Icons.add),
         backgroundColor: _isOffline ? Colors.grey : null,
       ),

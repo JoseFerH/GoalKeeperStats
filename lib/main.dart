@@ -1,5 +1,5 @@
 // lib/main.dart
-// 🔧 SOLUCIÓN: Main.dart con warm-up mejorado para evitar PigeonUserDetails bug
+// 🔧 SOLUCIÓN DEFINITIVA: Main.dart sin errores de nullability
 
 import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,6 +20,7 @@ import 'package:goalkeeper_stats/data/repositories/firebase_goalkeeper_passes_re
 import 'package:goalkeeper_stats/services/cache_manager.dart';
 import 'package:goalkeeper_stats/presentation/pages/auth/login_page.dart';
 import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
+import 'package:goalkeeper_stats/presentation/pages/splash/splash_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
@@ -29,23 +30,25 @@ import 'package:goalkeeper_stats/services/purchase_service.dart';
 import 'package:goalkeeper_stats/services/analytics_service.dart';
 import 'package:goalkeeper_stats/services/daily_limits_service.dart';
 import 'package:goalkeeper_stats/services/ad_service.dart';
-import 'package:goalkeeper_stats/core/constants/app_constants.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-// Variables globales para los repositorios
+// Variables globales usando late para evitar nullability issues
 late AuthRepository authRepository;
 late MatchesRepository matchesRepository;
 late ShotsRepository shotsRepository;
 late GoalkeeperPassesRepository passesRepository;
 late CacheManager cacheManager;
-
-// Variables globales para los servicios
 late ConnectivityService connectivityService;
 late FirebaseCrashlyticsService crashlyticsService;
 late PurchaseService purchaseService;
 late AnalyticsService analyticsService;
 late DailyLimitsService dailyLimitsService;
 late AdService adService;
+
+// Variables para controlar el estado de inicialización
+bool _servicesInitialized = false;
+bool _repositoriesInitialized = false;
+bool _initializationCompleted = false;
 
 Future<void> main() async {
   // Inicialización de Flutter
@@ -69,10 +72,20 @@ Future<void> main() async {
     ]);
   }
 
-  // Flag para indicar si Firebase se inicializó correctamente
-  bool firebaseInitialized = false;
+  // Iniciar la aplicación con splash screen
+  runApp(const GoalkeeperStatsApp());
+}
+
+/// 🔧 FUNCIÓN PRINCIPAL: Inicialización completa de la aplicación
+Future<void> performAppInitialization() async {
+  if (_initializationCompleted) {
+    debugPrint('⚠️ Inicialización ya completada, saltando...');
+    return;
+  }
 
   try {
+    debugPrint('🚀 Iniciando inicialización completa...');
+
     // 🔧 PASO 1: Inicializar Firebase con configuración mejorada
     debugPrint('🔥 Inicializando Firebase...');
     await Firebase.initializeApp(
@@ -81,8 +94,6 @@ Future<void> main() async {
 
     // 🔧 PASO CRÍTICO: Warm-up super robusto de Firebase Auth
     await _performSuperRobustFirebaseWarmUp();
-
-    firebaseInitialized = true;
     debugPrint('✅ Firebase inicializado y completamente calentado');
 
     // Configurar Crashlytics
@@ -107,24 +118,24 @@ Future<void> main() async {
 
     // 🔧 PASO 3: Inicializar repositorios con Firebase completamente listo
     await _initializeRepositoriesWithStableFirebase();
+
+    _initializationCompleted = true;
+    debugPrint('🎯 Inicialización completa exitosa');
   } catch (e, stack) {
-    debugPrint('❌ Error al inicializar Firebase o servicios: $e');
+    debugPrint('❌ Error en inicialización completa: $e');
     debugPrint('Stack trace: $stack');
 
-    if (firebaseInitialized) {
-      FirebaseCrashlytics.instance
-          .recordError(e, stack, reason: 'Error en inicialización principal');
-    }
-  }
+    // Resetear estados en caso de error
+    _servicesInitialized = false;
+    _repositoriesInitialized = false;
+    _initializationCompleted = false;
 
-  // Iniciar la aplicación
-  debugPrint('🚀 Iniciando aplicación...');
-  runApp(GoalkeeperStatsApp(
-    firebaseInitialized: firebaseInitialized,
-  ));
+    // Re-lanzar la excepción para que el splash screen la maneje
+    rethrow;
+  }
 }
 
-/// 🔧 FUNCIÓN NUEVA: Warm-up super robusto de Firebase Auth
+/// 🔧 FUNCIÓN: Warm-up super robusto de Firebase Auth
 Future<void> _performSuperRobustFirebaseWarmUp() async {
   try {
     debugPrint('🔥 Iniciando warm-up super robusto de Firebase Auth...');
@@ -237,57 +248,79 @@ Future<void> _performSuperRobustFirebaseWarmUp() async {
   }
 }
 
-/// 🔧 FUNCIÓN MEJORADA: Inicializar todos los servicios
+/// 🔧 FUNCIÓN: Inicializar todos los servicios
 Future<void> _initializeAllServices() async {
-  debugPrint('🔧 Inicializando servicios...');
-
-  // 1. Servicios básicos primero
-  connectivityService = ConnectivityService();
-  crashlyticsService = FirebaseCrashlyticsService();
-  await crashlyticsService.initialize();
-  analyticsService = AnalyticsService();
-
-  debugPrint('✅ Servicios básicos inicializados');
-
-  // 2. Inicializar CacheManager
-  cacheManager = CacheManager();
-  await cacheManager.init();
-  debugPrint('✅ Cache manager inicializado correctamente');
-
-  // 3. Inicializar servicio de límites diarios
-  dailyLimitsService = DailyLimitsService(
-    cacheManager: cacheManager,
-    crashlyticsService: crashlyticsService,
-  );
-  debugPrint('✅ DailyLimitsService inicializado');
-
-  // 4. Inicializar servicio de anuncios
-  adService = AdService();
-  debugPrint('🎯 Inicializando AdService...');
-
-  final adServiceInitialized = await adService.initialize();
-  if (adServiceInitialized) {
-    debugPrint('✅ AdService inicializado correctamente');
-  } else {
-    debugPrint('⚠️ AdService no se pudo inicializar');
+  if (_servicesInitialized) {
+    debugPrint('⚠️ Servicios ya inicializados, saltando...');
+    return;
   }
 
-  // 5. Inicializar PurchaseService
-  purchaseService = PurchaseService();
-  debugPrint('🛒 Inicializando PurchaseService...');
+  try {
+    debugPrint('🔧 Inicializando servicios...');
 
-  final purchaseInitialized = await purchaseService.initialize();
-  if (purchaseInitialized) {
-    debugPrint('✅ PurchaseService inicializado correctamente');
-  } else {
-    debugPrint('⚠️ PurchaseService no se pudo inicializar');
+    // 1. Servicios básicos primero
+    connectivityService = ConnectivityService();
+    crashlyticsService = FirebaseCrashlyticsService();
+    await crashlyticsService.initialize();
+    analyticsService = AnalyticsService();
+
+    debugPrint('✅ Servicios básicos inicializados');
+
+    // 2. Inicializar CacheManager
+    cacheManager = CacheManager();
+    await cacheManager.init();
+    debugPrint('✅ Cache manager inicializado correctamente');
+
+    // 3. Inicializar servicio de límites diarios
+    dailyLimitsService = DailyLimitsService(
+      cacheManager: cacheManager,
+      crashlyticsService: crashlyticsService,
+    );
+    debugPrint('✅ DailyLimitsService inicializado');
+
+    // 4. Inicializar servicio de anuncios
+    adService = AdService();
+    debugPrint('🎯 Inicializando AdService...');
+
+    final adServiceInitialized = await adService.initialize();
+    if (adServiceInitialized) {
+      debugPrint('✅ AdService inicializado correctamente');
+    } else {
+      debugPrint('⚠️ AdService no se pudo inicializar');
+    }
+
+    // 5. Inicializar PurchaseService
+    purchaseService = PurchaseService();
+    debugPrint('🛒 Inicializando PurchaseService...');
+
+    final purchaseInitialized = await purchaseService.initialize();
+    if (purchaseInitialized) {
+      debugPrint('✅ PurchaseService inicializado correctamente');
+    } else {
+      debugPrint('⚠️ PurchaseService no se pudo inicializar');
+    }
+
+    _servicesInitialized = true;
+    debugPrint('✅ Todos los servicios inicializados');
+  } catch (e, stack) {
+    debugPrint('❌ Error al inicializar servicios: $e');
+    _servicesInitialized = false;
+    rethrow;
   }
-
-  debugPrint('✅ Todos los servicios inicializados');
 }
 
-/// 🔧 FUNCIÓN NUEVA: Inicializar repositorios con Firebase estable
+/// 🔧 FUNCIÓN: Inicializar repositorios con Firebase estable
 Future<void> _initializeRepositoriesWithStableFirebase() async {
+  if (_repositoriesInitialized) {
+    debugPrint('⚠️ Repositorios ya inicializados, saltando...');
+    return;
+  }
+
+  if (!_servicesInitialized) {
+    throw Exception(
+        'Servicios no inicializados - no se pueden crear repositorios');
+  }
+
   try {
     debugPrint('🗄️ Inicializando repositorios con Firebase estable...');
 
@@ -327,98 +360,98 @@ Future<void> _initializeRepositoriesWithStableFirebase() async {
     );
     debugPrint('✅ MatchesRepository inicializado');
 
+    _repositoriesInitialized = true;
     debugPrint(
         '✅ Todos los repositorios inicializados correctamente con Firebase estable');
   } catch (e, stack) {
     debugPrint('❌ Error al inicializar repositorios: $e');
     debugPrint('Stack trace: $stack');
 
+    _repositoriesInitialized = false;
     crashlyticsService.recordError(e, stack,
         reason: 'Error inicializando repositorios con Firebase estable');
+    rethrow;
   }
 }
 
-class GoalkeeperStatsApp extends StatelessWidget {
-  final bool firebaseInitialized;
+/// 🔧 FUNCIÓN: Resetear estado de inicialización para reintentos
+void resetInitializationState() {
+  debugPrint('🔄 Reseteando estado de inicialización...');
 
-  const GoalkeeperStatsApp({
-    super.key,
-    required this.firebaseInitialized,
-  });
+  _servicesInitialized = false;
+  _repositoriesInitialized = false;
+  _initializationCompleted = false;
+
+  debugPrint('✅ Estado reseteado correctamente');
+}
+
+class GoalkeeperStatsApp extends StatefulWidget {
+  const GoalkeeperStatsApp({super.key});
+
+  @override
+  State<GoalkeeperStatsApp> createState() => _GoalkeeperStatsAppState();
+}
+
+class _GoalkeeperStatsAppState extends State<GoalkeeperStatsApp> {
+  bool _showSplash = true;
+  bool _initializationError = false;
+  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
-    // Si Firebase no está inicializado, mostrar una pantalla de error
-    if (!firebaseInitialized) {
-      return MaterialApp(
-        title: 'Goalkeeper Stats - Error',
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: Colors.red.shade50,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 80,
-                    color: Colors.red.shade600,
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Error al inicializar la aplicación',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No se pudo conectar con los servicios necesarios. '
-                    'Por favor:\n\n'
-                    '• Verifica tu conexión a internet\n'
-                    '• Asegúrate de tener la última versión de la app\n'
-                    '• Reinicia la aplicación',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 32),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      SystemNavigator.pop();
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Reiniciar App'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
+    return MaterialApp(
+      title: 'Goalkeeper Stats',
+      debugShowCheckedModeBanner: false,
+      theme: _buildLightTheme(),
+      darkTheme: _buildDarkTheme(),
+      themeMode: ThemeMode.system,
+      home: _showSplash ? _buildSplashScreen() : _buildMainApp(),
+    );
+  }
+
+  Widget _buildSplashScreen() {
+    return SplashScreen(
+      onInitialize: () async {
+        try {
+          // Resetear el estado si es un reintento
+          if (_initializationError) {
+            resetInitializationState();
+          }
+
+          await performAppInitialization();
+        } catch (e) {
+          setState(() {
+            _initializationError = true;
+            _errorMessage = e.toString();
+          });
+          rethrow;
+        }
+      },
+      onComplete: () {
+        if (mounted) {
+          setState(() {
+            _showSplash = false;
+          });
+        }
+      },
+    );
+  }
+
+  Widget _buildMainApp() {
+    // Si hubo error en la inicialización, mostrar pantalla de error
+    if (_initializationError || !_initializationCompleted) {
+      return _buildErrorScreen();
     }
 
     return MultiProvider(
       providers: [
-        // Repositorios
+        // Repositorios - usando late variables (no nullable)
         Provider<AuthRepository>.value(value: authRepository),
         Provider<MatchesRepository>.value(value: matchesRepository),
         Provider<ShotsRepository>.value(value: shotsRepository),
         Provider<GoalkeeperPassesRepository>.value(value: passesRepository),
 
-        // Servicios básicos
+        // Servicios básicos - usando late variables (no nullable)
         Provider<CacheManager>.value(value: cacheManager),
         Provider<ConnectivityService>.value(value: connectivityService),
         Provider<FirebaseCrashlyticsService>.value(value: crashlyticsService),
@@ -453,24 +486,8 @@ class GoalkeeperStatsApp extends StatelessWidget {
         locale: const Locale('es', ''), // Idioma por defecto
 
         // Temas
-        theme: ThemeData(
-          primarySwatch: Colors.green,
-          useMaterial3: true,
-          brightness: Brightness.light,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF184621),
-            brightness: Brightness.light,
-          ),
-        ),
-        darkTheme: ThemeData(
-          primarySwatch: Colors.green,
-          useMaterial3: true,
-          brightness: Brightness.dark,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF9EDE53),
-            brightness: Brightness.dark,
-          ),
-        ),
+        theme: _buildLightTheme(),
+        darkTheme: _buildDarkTheme(),
         themeMode: ThemeMode.system,
 
         // Página inicial
@@ -520,6 +537,154 @@ class GoalkeeperStatsApp extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen() {
+    return Scaffold(
+      backgroundColor: Colors.red.shade50,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 80,
+                color: Colors.red.shade600,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Error al inicializar la aplicación',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No se pudo conectar con los servicios necesarios. '
+                'Por favor:\n\n'
+                '• Verifica tu conexión a internet\n'
+                '• Asegúrate de tener la última versión de la app\n'
+                '• Reinicia la aplicación',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                ExpansionTile(
+                  title: const Text('Detalles técnicos'),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'monospace',
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      SystemNavigator.pop();
+                    },
+                    icon: const Icon(Icons.close),
+                    label: const Text('Cerrar App'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _showSplash = true;
+                        _initializationError = false;
+                        _errorMessage = null;
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  ThemeData _buildLightTheme() {
+    return ThemeData(
+      primarySwatch: Colors.green,
+      useMaterial3: true,
+      brightness: Brightness.light,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF184621),
+        brightness: Brightness.light,
+      ),
+      // appBarTheme: const AppBarTheme(
+      //   elevation: 0,
+      //   centerTitle: true,
+      //   backgroundColor: Color(0xFF388E3C),
+      //   foregroundColor: Colors.white,
+      // ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF388E3C),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  ThemeData _buildDarkTheme() {
+    return ThemeData(
+      primarySwatch: Colors.green,
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF9EDE53),
+        brightness: Brightness.dark,
+      ),
+      // appBarTheme: const AppBarTheme(
+      //   elevation: 0,
+      //   centerTitle: true,
+      //   backgroundColor: Color(0xFF1B5E20),
+      //   foregroundColor: Colors.white,
+      // ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4CAF50),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
     );
   }

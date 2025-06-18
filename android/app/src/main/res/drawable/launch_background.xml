@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Splash screen personalizado para Goalkeeper Stats -->
+<!-- android/app/src/main/res/drawable/launch_background.xml -->
+<!-- Splash screen mejorado para Goalkeeper Stats -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Fondo con gradiente verde -->
     <item>
@@ -12,32 +13,61 @@
         </shape>
     </item>
 
-    <!-- Logo centrado -->
+    <!-- Logo centrado (se reemplazará por el Flutter splash) -->
     <item android:gravity="center">
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/splash_logo" />
+        <shape android:shape="oval">
+            <size 
+                android:width="120dp" 
+                android:height="120dp" />
+            <solid android:color="#FFFFFF" />
+            <stroke 
+                android:width="4dp" 
+                android:color="#2E7D32" />
+        </shape>
     </item>
 
-    <!-- Indicador de carga en la parte inferior -->
+    <!-- Icono de portería dentro del círculo -->
+    <item android:gravity="center">
+        <shape android:shape="rectangle">
+            <size 
+                android:width="60dp" 
+                android:height="60dp" />
+            <solid android:color="#388E3C" />
+        </shape>
+    </item>
+
+    <!-- Indicador de carga minimalista en la parte inferior -->
     <item android:gravity="bottom|center_horizontal">
         <inset android:insetBottom="120dp">
-            <shape android:shape="oval">
+            <shape android:shape="rectangle">
                 <size 
-                    android:width="40dp" 
-                    android:height="40dp" />
+                    android:width="200dp" 
+                    android:height="4dp" />
+                <corners android:radius="2dp" />
                 <solid android:color="#80FFFFFF" />
             </shape>
         </inset>
     </item>
 
-    <!-- Texto de marca en la parte inferior -->
+    <!-- Puntos decorativos -->
     <item android:gravity="bottom|center_horizontal">
-        <inset android:insetBottom="60dp">
+        <inset android:insetBottom="80dp">
+            <shape android:shape="oval">
+                <size 
+                    android:width="8dp" 
+                    android:height="8dp" />
+                <solid android:color="#80FFFFFF" />
+            </shape>
+        </inset>
+    </item>
+
+    <!-- Texto de marca en la parte inferior (solo para referencia visual) -->
+    <item android:gravity="bottom|center_horizontal">
+        <inset android:insetBottom="40dp">
             <shape android:shape="rectangle">
                 <size 
-                    android:width="200dp" 
-                    android:height="40dp" />
+                    android:width="160dp" 
+                    android:height="20dp" />
                 <solid android:color="@android:color/transparent" />
             </shape>
         </inset>

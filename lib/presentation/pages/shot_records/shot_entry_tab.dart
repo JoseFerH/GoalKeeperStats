@@ -273,7 +273,7 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Registrar Datos'),
+        //title: const Text('Registrar Datos'),
         actions: [
           if (!_isConnected)
             IconButton(
@@ -283,12 +283,12 @@ class _ShotEntryTabState extends State<ShotEntryTab> {
               tooltip: 'Sin conexión',
             ),
           // ACTUALIZADO: Botón de debug solo para usuarios premium en modo desarrollo
-          if (kDebugMode && widget.user.subscription.isPremium)
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              onPressed: _debugFirestoreData,
-              tooltip: 'Debug Firestore (Premium)',
-            ),
+          // if (kDebugMode && widget.user.subscription.isPremium)
+          //   IconButton(
+          //     icon: const Icon(Icons.bug_report),
+          //     onPressed: _debugFirestoreData,
+          //     tooltip: 'Debug Firestore (Premium)',
+          //   ),
         ],
       ),
       body: _isLoading ? _buildLoadingIndicator() : _buildContent(),

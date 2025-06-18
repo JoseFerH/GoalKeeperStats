@@ -1,21 +1,19 @@
+// lib/presentation/pages/splash/splash_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:goalkeeper_stats/presentation/blocs/auth/auth_bloc.dart';
-import 'package:goalkeeper_stats/presentation/blocs/auth/auth_event.dart';
-import 'package:goalkeeper_stats/presentation/blocs/auth/auth_state.dart';
-import 'package:goalkeeper_stats/presentation/pages/auth/login_page.dart';
-import 'package:goalkeeper_stats/presentation/pages/dashboard/dashboard_page.dart';
-import 'package:goalkeeper_stats/services/connectivity_service.dart';
-import 'package:goalkeeper_stats/services/firebase_crashlytics_service.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math' as math;
 
-/// Splash Screen con pre-loader animado para Goalkeeper Stats App
-///
-/// Maneja la inicialización de la app y la verificación del estado de autenticación
-/// con una interfaz visual atractiva y feedback al usuario
+/// Pantalla de splash con pre-loader animado para Goalkeeper Stats
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  final Future<void> Function() onInitialize;
+  final VoidCallback onComplete;
+
+  const SplashScreen({
+    super.key,
+    required this.onInitialize,
+    required this.onComplete,
+  });
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -24,511 +22,550 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   // Controladores de animación
-  late AnimationController _logoAnimationController;
-  late AnimationController _loadingAnimationController;
-  late AnimationController _progressAnimationController;
+  late AnimationController _logoController;
+  late AnimationController _loaderController;
+  late AnimationController _textController;
+  late AnimationController _progressController;
 
   // Animaciones
-  late Animation<double> _logoFadeAnimation;
-  late Animation<double> _logoScaleAnimation;
-  late Animation<double> _loadingOpacityAnimation;
-  late Animation<double> _progressAnimation;
+  late Animation<double> _logoScale;
+  late Animation<double> _logoOpacity;
+  late Animation<double> _loaderRotation;
+  late Animation<double> _textOpacity;
+  late Animation<double> _progressValue;
 
-  // Control de estado
-  bool _isInitialized = false;
-  String _currentMessage = 'Iniciando aplicación...';
+  // Estados del splash
+  bool _isInitializing = false;
+  bool _hasError = false;
+  String _currentStep = 'Iniciando...';
   double _progress = 0.0;
 
-  // Lista de mensajes de carga
-  final List<String> _loadingMessages = [
+  // Lista de pasos de inicialización
+  final List<String> _initSteps = [
     'Iniciando aplicación...',
     'Conectando con Firebase...',
-    'Verificando conectividad...',
+    'Calentando servicios...',
+    'Inicializando repositorios...',
     'Configurando servicios...',
-    'Verificando autenticación...',
-    '¡Listo para atajar!',
+    'Preparando interfaz...',
+    '¡Listo para jugar!'
   ];
 
   @override
   void initState() {
     super.initState();
-    _initializeAnimations();
-    _startInitializationProcess();
+    _setupAnimations();
+    _startSplashSequence();
   }
 
-  /// Inicializar todas las animaciones
-  void _initializeAnimations() {
-    // Animación del logo (fade in + scale)
-    _logoAnimationController = AnimationController(
+  void _setupAnimations() {
+    // Controlador para el logo
+    _logoController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
 
-    _logoFadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _logoAnimationController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-    ));
+    // Controlador para el loader circular
+    _loaderController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat();
 
-    _logoScaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _logoAnimationController,
-      curve: const Interval(0.0, 0.8, curve: Curves.elasticOut),
-    ));
-
-    // Animación del loading
-    _loadingAnimationController = AnimationController(
+    // Controlador para el texto
+    _textController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
 
-    _loadingOpacityAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _loadingAnimationController,
-      curve: Curves.easeIn,
-    ));
-
-    // Animación del progreso
-    _progressAnimationController = AnimationController(
+    // Controlador para la barra de progreso
+    _progressController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
 
-    _progressAnimation = Tween<double>(
+    // Animación del logo
+    _logoScale = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(
-      parent: _progressAnimationController,
-      curve: Curves.easeOut,
+      parent: _logoController,
+      curve: Curves.elasticOut,
+    ));
+
+    _logoOpacity = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _logoController,
+      curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
+    ));
+
+    // Animación del loader
+    _loaderRotation = Tween<double>(
+      begin: 0.0,
+      end: 2 * math.pi,
+    ).animate(_loaderController);
+
+    // Animación del texto
+    _textOpacity = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _textController,
+      curve: Curves.easeInOut,
+    ));
+
+    // Animación del progreso
+    _progressValue = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _progressController,
+      curve: Curves.easeInOut,
     ));
   }
 
-  /// Proceso de inicialización completo
-  Future<void> _startInitializationProcess() async {
+  Future<void> _startSplashSequence() async {
     try {
-      // Paso 1: Iniciar animación del logo
-      _logoAnimationController.forward();
+      // Vibración suave al iniciar
+      HapticFeedback.lightImpact();
+
+      // Paso 1: Mostrar logo
+      await _logoController.forward();
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Paso 2: Mostrar texto de carga
+      _textController.forward();
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Paso 3: Iniciar proceso de inicialización
+      setState(() {
+        _isInitializing = true;
+      });
+
+      await _performInitializationWithProgress();
+
+      // Paso 4: Esperar un momento antes de continuar
       await Future.delayed(const Duration(milliseconds: 800));
 
-      // Paso 2: Mostrar elementos de carga
-      _loadingAnimationController.forward();
-      await Future.delayed(const Duration(milliseconds: 400));
-
-      // Paso 3: Proceso de inicialización por pasos
-      await _initializeStep(0, 'Iniciando aplicación...', () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-      });
-
-      await _initializeStep(1, 'Conectando con Firebase...', () async {
-        // Verificar que Firebase esté inicializado
-        if (Firebase.apps.isEmpty) {
-          await Firebase.initializeApp();
-        }
-      });
-
-      await _initializeStep(2, 'Verificando conectividad...', () async {
-        // Verificar conectividad
-        final connectivityService =
-            Provider.of<ConnectivityService>(context, listen: false);
-        await connectivityService.checkConnectivity();
-      });
-
-      await _initializeStep(3, 'Configurando servicios...', () async {
-        // Inicializar servicios adicionales (Analytics, Crashlytics, etc.)
-        await _initializeServices();
-      });
-
-      await _initializeStep(4, 'Verificando autenticación...', () async {
-        // Verificar estado de autenticación
-        if (mounted) {
-          context.read<AuthBloc>().add(CheckAuthStatusEvent());
-        }
-      });
-
-      await _initializeStep(5, '¡Listo para atajar!', () async {
-        await Future.delayed(const Duration(milliseconds: 800));
-      });
-
-      // Marcar como inicializado
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
+      // Paso 5: Navegar a la aplicación principal
+      if (mounted && !_hasError) {
+        widget.onComplete();
       }
     } catch (e) {
-      debugPrint('Error durante la inicialización: $e');
+      _handleError(e);
+    }
+  }
 
-      // En caso de error, continuar con la inicialización básica
-      if (mounted) {
-        _updateMessage('Error en inicialización, continuando...');
-        await Future.delayed(const Duration(milliseconds: 1000));
+  Future<void> _performInitializationWithProgress() async {
+    for (int i = 0; i < _initSteps.length; i++) {
+      if (!mounted) return;
 
-        setState(() {
-          _isInitialized = true;
-        });
+      setState(() {
+        _currentStep = _initSteps[i];
+        _progress = (i + 1) / _initSteps.length;
+      });
 
-        // Verificar autenticación como fallback
-        context.read<AuthBloc>().add(CheckAuthStatusEvent());
+      // Animar el progreso
+      _progressController.reset();
+      await _progressController.forward();
+
+      // Ejecutar inicialización real solo en el paso de Firebase
+      if (i == 1) {
+        try {
+          await widget.onInitialize();
+        } catch (e) {
+          throw e;
+        }
+      } else {
+        // Simular tiempo de otros pasos
+        await Future.delayed(Duration(
+          milliseconds: 300 + (math.Random().nextInt(400)),
+        ));
+      }
+
+      // Pequeña vibración en pasos importantes
+      if (i == 1 || i == _initSteps.length - 1) {
+        HapticFeedback.selectionClick();
       }
     }
   }
 
-  /// Ejecutar un paso de inicialización
-  Future<void> _initializeStep(
-      int step, String message, Future<void> Function() action) async {
+  void _handleError(dynamic error) {
     if (!mounted) return;
 
-    _updateMessage(message);
-    _updateProgress(step / (_loadingMessages.length - 1));
+    setState(() {
+      _hasError = true;
+      _currentStep = 'Error al inicializar';
+    });
 
-    try {
-      await action();
-    } catch (e) {
-      debugPrint('Error en paso $step: $e');
-      // Continuar con el siguiente paso aunque haya error
-    }
+    // Vibración de error
+    HapticFeedback.heavyImpact();
 
-    await Future.delayed(const Duration(milliseconds: 400));
+    // Mostrar dialog de error después de un momento
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      if (mounted) {
+        _showErrorDialog(error.toString());
+      }
+    });
   }
 
-  /// Actualizar mensaje de carga
-  void _updateMessage(String message) {
-    if (mounted) {
-      setState(() {
-        _currentMessage = message;
-      });
-    }
+  void _showErrorDialog(String error) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Error de Inicialización'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'No se pudo inicializar la aplicación correctamente.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            const Text('Posibles soluciones:'),
+            const SizedBox(height: 8),
+            const Text('• Verifica tu conexión a internet'),
+            const Text('• Reinicia la aplicación'),
+            const Text('• Actualiza la app si hay versiones disponibles'),
+            const SizedBox(height: 16),
+            if (error.isNotEmpty) ...[
+              const Text(
+                'Detalles técnicos:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                error,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (mounted) {
+                Navigator.of(context).pop();
+                SystemNavigator.pop();
+              }
+            },
+            child: const Text('Cerrar App'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (mounted) {
+                Navigator.of(context).pop();
+                _retryInitialization();
+              }
+            },
+            child: const Text('Reintentar'),
+          ),
+        ],
+      ),
+    );
   }
 
-  /// Actualizar progreso
-  void _updateProgress(double progress) {
-    if (mounted) {
-      setState(() {
-        _progress = progress;
-      });
-      _progressAnimationController.forward();
-    }
-  }
+  void _retryInitialization() {
+    setState(() {
+      _hasError = false;
+      _isInitializing = false;
+      _currentStep = 'Iniciando...';
+      _progress = 0.0;
+    });
 
-  /// Inicializar servicios adicionales
-  Future<void> _initializeServices() async {
-    try {
-      // Inicializar Firebase Crashlytics si está disponible
-      final crashlyticsService = FirebaseCrashlyticsService();
-      // Configuraciones adicionales de servicios
-    } catch (e) {
-      debugPrint('Error inicializando servicios: $e');
-    }
+    // Reiniciar animaciones
+    _logoController.reset();
+    _textController.reset();
+    _progressController.reset();
+
+    // Reiniciar secuencia
+    _startSplashSequence();
   }
 
   @override
   void dispose() {
-    _logoAnimationController.dispose();
-    _loadingAnimationController.dispose();
-    _progressAnimationController.dispose();
+    _logoController.dispose();
+    _loaderController.dispose();
+    _textController.dispose();
+    _progressController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<AuthBloc, AuthState>(
-      listener: (context, state) {
-        if (!_isInitialized) return;
+    final screenSize = MediaQuery.of(context).size;
+    final isTablet = screenSize.shortestSide > 600;
 
-        // Solo navegar después de que la inicialización esté completa
-        if (state is AuthenticatedState) {
-          debugPrint('Usuario autenticado, navegando al dashboard...');
-          _navigateToPage(DashboardPage(user: state.user));
-        } else if (state is UnauthenticatedState) {
-          debugPrint('Usuario no autenticado, navegando al login...');
-          _navigateToPage(const LoginPage());
-        } else if (state is AuthErrorState) {
-          debugPrint('Error de autenticación: ${state.message}');
-          // En caso de error, ir al login
-          _navigateToPage(const LoginPage());
-        }
-      },
-      child: Scaffold(
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.green[700]!,
-                Colors.green[900]!,
-              ],
-            ),
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF388E3C), // Verde principal
+              Color(0xFF1B5E20), // Verde oscuro
+            ],
           ),
-          child: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Área principal con logo y loader
+              Expanded(
+                flex: 3,
+                child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // Logo animado
-                      _buildAnimatedLogo(),
+                      AnimatedBuilder(
+                        animation: _logoController,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _logoScale.value,
+                            child: Opacity(
+                              opacity: _logoOpacity.value,
+                              child: _buildLogo(isTablet),
+                            ),
+                          );
+                        },
+                      ),
 
-                      const SizedBox(height: 40),
+                      SizedBox(height: isTablet ? 40 : 30),
 
                       // Título de la app
-                      _buildAppTitle(),
+                      AnimatedBuilder(
+                        animation: _textController,
+                        builder: (context, child) {
+                          return Opacity(
+                            opacity: _textOpacity.value,
+                            child: Text(
+                              'Goalkeeper Stats',
+                              style: TextStyle(
+                                fontSize: isTablet ? 32 : 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
 
-                      const SizedBox(height: 60),
+                      SizedBox(height: isTablet ? 16 : 12),
 
-                      // Elementos de carga
-                      _buildLoadingElements(),
+                      // Subtítulo
+                      AnimatedBuilder(
+                        animation: _textController,
+                        builder: (context, child) {
+                          return Opacity(
+                            opacity: _textOpacity.value * 0.8,
+                            child: Text(
+                              'Tu asistente de portería',
+                              style: TextStyle(
+                                fontSize: isTablet ? 18 : 16,
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w300,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
-
-                // Footer con información adicional
-                _buildFooter(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Widget del logo animado
-  Widget _buildAnimatedLogo() {
-    return AnimatedBuilder(
-      animation: _logoAnimationController,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _logoFadeAnimation.value,
-          child: Transform.scale(
-            scale: _logoScaleAnimation.value,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
               ),
-              child: const Icon(
-                Icons.sports_soccer,
-                size: 60,
-                color: Colors.green,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 
-  /// Título de la aplicación
-  Widget _buildAppTitle() {
-    return AnimatedBuilder(
-      animation: _logoAnimationController,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _logoFadeAnimation.value,
-          child: Column(
-            children: [
-              Text(
-                'Goalkeeper Stats',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.3),
-                      offset: const Offset(0, 2),
-                      blurRadius: 4,
-                    ),
+              // Área de loading
+              Expanded(
+                flex: 1,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Loader circular animado
+                    if (_isInitializing) ...[
+                      AnimatedBuilder(
+                        animation: _loaderController,
+                        builder: (context, child) {
+                          return Transform.rotate(
+                            angle: _loaderRotation.value,
+                            child: Container(
+                              width: isTablet ? 50 : 40,
+                              height: isTablet ? 50 : 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white30,
+                                  width: 3,
+                                ),
+                              ),
+                              child: CustomPaint(
+                                painter: LoaderPainter(
+                                  progress: _hasError ? 0.0 : _progress,
+                                  hasError: _hasError,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      SizedBox(height: isTablet ? 24 : 20),
+
+                      // Barra de progreso
+                      Container(
+                        width: screenSize.width * 0.6,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: AnimatedBuilder(
+                          animation: _progressValue,
+                          builder: (context, child) {
+                            return FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: _progress,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _hasError ? Colors.red : Colors.white,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      SizedBox(height: isTablet ? 16 : 12),
+
+                      // Texto de estado
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(
+                          _currentStep,
+                          key: ValueKey(_currentStep),
+                          style: TextStyle(
+                            fontSize: isTablet ? 16 : 14,
+                            color: _hasError
+                                ? Colors.red.shade200
+                                : Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                      SizedBox(height: isTablet ? 8 : 6),
+
+                      // Porcentaje
+                      Text(
+                        '${(_progress * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: isTablet ? 14 : 12,
+                          color: Colors.white54,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Tu rendimiento, tu evolución',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.white.withOpacity(0.9),
-                  fontWeight: FontWeight.w300,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
-  /// Elementos de carga (mensaje, progreso, spinner)
-  Widget _buildLoadingElements() {
-    return AnimatedBuilder(
-      animation: _loadingAnimationController,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _loadingOpacityAnimation.value,
-          child: Column(
-            children: [
-              // Spinner de carga
-              _buildLoadingSpinner(),
-
-              const SizedBox(height: 24),
-
-              // Mensaje de estado
-              _buildStatusMessage(),
-
-              const SizedBox(height: 16),
-
-              // Barra de progreso
-              _buildProgressBar(),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// Spinner de carga personalizado
-  Widget _buildLoadingSpinner() {
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: CircularProgressIndicator(
-        valueColor:
-            AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.8)),
-        strokeWidth: 3,
-      ),
-    );
-  }
-
-  /// Mensaje de estado actual
-  Widget _buildStatusMessage() {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Text(
-        _currentMessage,
-        key: ValueKey(_currentMessage),
-        style: TextStyle(
-          fontSize: 16,
-          color: Colors.white.withOpacity(0.9),
-          fontWeight: FontWeight.w400,
-        ),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  /// Barra de progreso
-  Widget _buildProgressBar() {
-    return Container(
-      width: MediaQuery.of(context).size.width * 0.7,
-      height: 4,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(2),
-        color: Colors.white.withOpacity(0.3),
-      ),
-      child: AnimatedBuilder(
-        animation: _progressAnimation,
-        builder: (context, child) {
-          return FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: _progress,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
-                color: Colors.white,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// Footer con información adicional
-  Widget _buildFooter() {
-    return AnimatedBuilder(
-      animation: _loadingAnimationController,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _loadingOpacityAnimation.value * 0.7,
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                Text(
+              // Footer
+              Padding(
+                padding: EdgeInsets.only(bottom: isTablet ? 24 : 16),
+                child: Text(
                   'Versión 1.0.0',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.6),
+                    fontSize: isTablet ? 12 : 10,
+                    color: Colors.white38,
+                    fontWeight: FontWeight.w300,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '© 2024 Goalkeeper Stats App',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withOpacity(0.5),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  /// Navegar a la página correspondiente con animación
-  void _navigateToPage(Widget page) {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => page,
-            transitionDuration: const Duration(milliseconds: 600),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              const begin = Offset(0.0, 1.0);
-              const end = Offset.zero;
-              const curve = Curves.easeInOut;
+  Widget _buildLogo(bool isTablet) {
+    final size = isTablet ? 120.0 : 100.0;
 
-              var tween = Tween(begin: begin, end: end).chain(
-                CurveTween(curve: curve),
-              );
-
-              var offsetAnimation = animation.drive(tween);
-              var fadeAnimation = animation.drive(
-                Tween(begin: 0.0, end: 1.0).chain(
-                  CurveTween(curve: curve),
-                ),
-              );
-
-              return SlideTransition(
-                position: offsetAnimation,
-                child: FadeTransition(
-                  opacity: fadeAnimation,
-                  child: child,
-                ),
-              );
-            },
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-        );
-      }
-    });
+        ],
+      ),
+      child: Icon(
+        Icons.sports_soccer,
+        size: size * 0.6,
+        color: const Color(0xFF388E3C),
+      ),
+    );
+  }
+}
+
+/// Custom painter para el loader circular con progreso
+class LoaderPainter extends CustomPainter {
+  final double progress;
+  final bool hasError;
+
+  LoaderPainter({
+    required this.progress,
+    required this.hasError,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 2;
+
+    final paint = Paint()
+      ..color = hasError ? Colors.red : Colors.white
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Dibujar el arco de progreso
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2, // Empezar desde arriba
+      2 * math.pi * progress, // Progreso actual
+      false,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(LoaderPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.hasError != hasError;
   }
 }

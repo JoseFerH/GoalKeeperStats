@@ -180,7 +180,7 @@ class _HomeTabState extends State<HomeTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inicio'),
+        //title: const Text('Inicio'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

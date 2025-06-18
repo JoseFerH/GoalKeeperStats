@@ -140,7 +140,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Suscripción Premium'),
+        //title: const Text('Suscripción Premium'),
         elevation: 0,
       ),
       body: _isLoading ? _buildLoadingView() : _buildContent(),
