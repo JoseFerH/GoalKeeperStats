@@ -8,6 +8,7 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
 dependencies {
     // Import the BoM for the Firebase platform
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
@@ -16,11 +17,16 @@ dependencies {
     // When using the BoM, you don't specify versions in Firebase library dependencies
     implementation("com.google.firebase:firebase-auth")
 
-    // Also add the dependencies for the Credential Manager libraries and specify their versions
+    // 🔧 DEPENDENCIAS CORREGIDAS: Para mejorar compatibilidad con Google Sign-In
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    
+    // 🔧 CORREGIDA: Para evitar conflictos de PigeonUserDetails
+    implementation("com.google.android.gms:play-services-auth:21.0.0")
+    implementation("com.google.android.gms:play-services-base:18.3.0")
 }
+
 android {
     namespace = "com.example.goalkeeper_stats"
     compileSdk = flutter.compileSdkVersion
@@ -44,6 +50,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // 🔧 NUEVA CONFIGURACIÓN: Para estabilidad de Google Sign-In
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -53,9 +62,24 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+    
+    // 🔧 NUEVA SECCIÓN: Configuraciones adicionales para estabilidad
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/license.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/notice.txt",
+                "META-INF/ASL2.0"
+            )
+        }
+    }
 }
 
 flutter {
     source = "../.."
 }
-

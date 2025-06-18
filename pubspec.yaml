@@ -12,38 +12,32 @@ dependencies:
   flutter_localizations: 
     sdk: flutter
 
-  # NUEVAS dependencias para el splash screen mejorado
-  # (si no las tienes ya)
-  
-  # Para animaciones avanzadas
+  # Para animaciones avanzadas 
   animations: ^2.0.8
   
   # Para efectos visuales adicionales
   flutter_animate: ^4.2.0+1
-
-  # Para mejor control de status bar
-  # flutter_statusbar_manager: ^1.0.2
 
   # Estado y arquitectura
   flutter_bloc: ^8.1.3
   equatable: ^2.0.5
   provider: ^6.1.1
 
-  # Firebase y backend - VERSIONES CORREGIDAS Y SIMPLIFICADAS
+  # 🔧 FIREBASE - VERSIONES CORREGIDAS PARA ELIMINAR PIGEONUSERDETAILS
   firebase_core: ^2.24.2
-  firebase_auth: 4.15.3        # Versión específica que funciona
+  firebase_auth: ^4.16.0        # 🔧 ACTUALIZADA: Versión más estable
   cloud_firestore: ^4.13.6 
   firebase_analytics: ^10.7.4
   firebase_crashlytics: ^3.4.9
   
-  # 🔧 CORRECCIÓN: Usar google_sign_in directamente (eliminar Firebase UI Auth)
-  google_sign_in: ^6.1.6
+  # 🔧 GOOGLE SIGN-IN - Versión compatible
+  google_sign_in: ^6.2.1       # 🔧 ACTUALIZADA: Mejor compatibilidad
 
   # UI y visualización
   fl_chart: ^0.66.0
   
   # Internacionalización
-  intl: ^0.19.0  # 🔧 CORRECCIÓN: Versión más estable
+  intl: ^0.19.0
   
   # Almacenamiento y datos
   shared_preferences: ^2.2.2
@@ -64,7 +58,6 @@ dependencies:
   in_app_purchase_android: ^0.3.0+16
   in_app_purchase_storekit: ^0.3.6+7
   
-
   # Anuncios de Google AdMob
   google_mobile_ads: ^5.0.0
 
@@ -74,9 +67,12 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   build_runner: ^2.4.7
 
-# 🔧 CORRECCIÓN: Forzar versión de intl si hay conflictos
+# 🔧 DEPENDENCY OVERRIDES MEJORADOS - Para evitar conflictos
 dependency_overrides:
   intl: ^0.19.0
+  # 🔧 NUEVO: Forzar versiones específicas que funcionan juntas
+  firebase_auth: ^4.16.0
+  google_sign_in: ^6.2.1
 
 flutter:
   uses-material-design: true
@@ -84,14 +80,3 @@ flutter:
   # Assets para la aplicación
   assets:
     - assets/images/
-
-# flutter_native_splash:
-#   color: "#388E3C"
-#   image: assets/images/splash_logo.png
-#   color_dark: "#1B5E20"
-#   image_dark: assets/images/splash_logo_dark.png
-#   android_12:
-#     image: assets/images/splash_logo.png
-#     color: "#388E3C"
-#     image_dark: assets/images/splash_logo_dark.png
-#     color_dark: "#1B5E20"
