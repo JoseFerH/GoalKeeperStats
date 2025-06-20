@@ -41,16 +41,17 @@ class ConnectivityService {
 
     try {
       // Obtener estado inicial
-      _lastResult = await _connectivity.checkConnectivity();
+      _lastResult =
+          (await _connectivity.checkConnectivity()) as ConnectivityResult;
 
       // Suscribirse a cambios
       _subscription = _connectivity.onConnectivityChanged.listen((result) {
-        _lastResult = result;
-        _connectivityController.add(result);
+        _lastResult = result as ConnectivityResult;
+        _connectivityController.add(result as ConnectivityResult);
 
         // 🔧 CORREGIDO: Registrar cambio en Crashlytics con valor string
-        _recordConnectivityChange(result);
-      });
+        _recordConnectivityChange(result as ConnectivityResult);
+      }) as StreamSubscription<ConnectivityResult>;
 
       _isInitialized = true;
     } catch (e) {
@@ -83,7 +84,8 @@ class ConnectivityService {
   /// Verificar la conectividad actual
   Future<bool> checkConnectivity() async {
     try {
-      _lastResult = await _connectivity.checkConnectivity();
+      _lastResult =
+          (await _connectivity.checkConnectivity()) as ConnectivityResult;
       return isConnected;
     } catch (e) {
       debugPrint('Error al verificar conectividad: $e');
@@ -130,10 +132,10 @@ class ConnectivityService {
   }) async {
     try {
       final result = await _connectivity.checkConnectivity().timeout(timeout);
-      _lastResult = result;
+      _lastResult = result as ConnectivityResult;
 
       // Registrar el resultado
-      _recordConnectivityChange(result);
+      _recordConnectivityChange(result as ConnectivityResult);
 
       return isConnected;
     } catch (e) {

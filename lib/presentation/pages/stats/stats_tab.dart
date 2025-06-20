@@ -1640,7 +1640,7 @@ class _StatsTabState extends State<StatsTab>
           maxY: spots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b) + 2,
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: lineColor.withOpacity(0.8),
+              //tooltipBgColor: lineColor.withOpacity(0.8),
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((touchedSpot) {
                   final date = displayDates[touchedSpot.x.toInt()];
@@ -2356,7 +2356,7 @@ class _StatsTabState extends State<StatsTab>
           maxY: 100, // Porcentaje de 0 a 100
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: lineColor.withOpacity(0.8),
+              //tooltipBgColor: lineColor.withOpacity(0.8),
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((touchedSpot) {
                   final idx = touchedSpot.x.toInt();

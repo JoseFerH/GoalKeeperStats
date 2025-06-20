@@ -10,21 +10,18 @@ plugins {
 }
 
 dependencies {
-    // Import the BoM for the Firebase platform
-    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    // 🔧 FIREBASE BoM - Versión compatible con las versiones del pubspec
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
 
-    // Add the dependency for the Firebase Authentication library
-    // When using the BoM, you don't specify versions in Firebase library dependencies
+    // Firebase libraries (sin especificar versiones gracias al BoM)
     implementation("com.google.firebase:firebase-auth")
-
-    // 🔧 DEPENDENCIAS CORREGIDAS: Para mejorar compatibilidad con Google Sign-In
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
     
-    // 🔧 CORREGIDA: Para evitar conflictos de PigeonUserDetails
-    implementation("com.google.android.gms:play-services-auth:21.0.0")
-    implementation("com.google.android.gms:play-services-base:18.3.0")
+    // 🔧 DEPENDENCIAS MÍNIMAS: Solo las esenciales para evitar conflictos
+    implementation("androidx.credentials:credentials:1.2.2")
+    implementation("androidx.credentials:credentials-play-services-auth:1.2.2")
 }
 
 android {
@@ -42,40 +39,19 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.goalkeeper_stats"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
-        // 🔧 NUEVA CONFIGURACIÓN: Para estabilidad de Google Sign-In
+        // Para compatibilidad
         multiDexEnabled = true
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
-        }
-    }
-    
-    // 🔧 NUEVA SECCIÓN: Configuraciones adicionales para estabilidad
-    packaging {
-        resources {
-            excludes += listOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE",
-                "META-INF/LICENSE.txt",
-                "META-INF/license.txt",
-                "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                "META-INF/notice.txt",
-                "META-INF/ASL2.0"
-            )
         }
     }
 }

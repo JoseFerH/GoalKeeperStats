@@ -89,12 +89,12 @@ class PurchaseService {
       debugPrint('✅ Compras in-app disponibles');
 
       // Configurar Android si es necesario
-      if (Platform.isAndroid) {
-        final InAppPurchaseAndroidPlatformAddition androidAddition =
-            _inAppPurchase
-                .getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
-        InAppPurchaseAndroidPlatformAddition.enablePendingPurchases();
-      }
+      // if (Platform.isAndroid) {
+      //   final InAppPurchaseAndroidPlatformAddition androidAddition =
+      //       _inAppPurchase
+      //           .getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
+      //   InAppPurchaseAndroidPlatformAddition.enablePendingPurchases();
+      // }
 
       // Escuchar actualizaciones de compras
       _purchaseSubscription = _inAppPurchase.purchaseStream.listen(

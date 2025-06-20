@@ -425,34 +425,72 @@ class FirebaseAuthRepository implements AuthRepository {
     throw Exception('Error inesperado en Firebase Auth');
   }
 
-  /// 🔧 RECUPERACIÓN DE ERROR PIGEON: Warm-up específico
+  /// 🔧 RECUPERACIÓN DE ERROR PIGEON: Warm-up específico MEJORADO
   Future<void> _performPigeonErrorRecovery() async {
     try {
-      debugPrint('🚨 Ejecutando recuperación de error PigeonUserDetails...');
+      debugPrint(
+          '🚨 Ejecutando recuperación MEJORADA de error PigeonUserDetails...');
 
-      // Espera larga
-      await Future.delayed(const Duration(seconds: 2));
+      // 1. Espera larga inicial
+      await Future.delayed(const Duration(seconds: 3));
 
-      // Re-configurar Firebase Auth
+      // 2. Reset completo de Firebase Auth
+      try {
+        await _firebaseAuth.signOut();
+        debugPrint('🔧 Firebase Auth sign out completado');
+      } catch (e) {
+        debugPrint('⚠️ Error en sign out durante recovery: $e');
+      }
+
+      // 3. Espera adicional después del sign out
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      // 4. Re-configurar Firebase Auth desde cero
       await _firebaseAuth.setLanguageCode('es');
+      debugPrint('🔧 Idioma re-configurado');
 
-      // Múltiples operaciones de warm-up
-      for (int i = 0; i < 3; i++) {
+      // 5. Múltiples operaciones de warm-up progresivas
+      for (int i = 0; i < 5; i++) {
         try {
           await _firebaseAuth
               .fetchSignInMethodsForEmail('recovery$i@test.com')
               .timeout(const Duration(seconds: 3));
-        } catch (_) {}
+        } catch (_) {
+          // Ignorar errores esperados
+        }
 
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
       }
 
-      // Re-warm Google Sign-In
-      await _googleSignIn.isSignedIn();
+      // 6. Re-warm Google Sign-In completamente
+      try {
+        await _googleSignIn.signOut();
+        await Future.delayed(const Duration(milliseconds: 800));
+        await _googleSignIn.isSignedIn();
+        debugPrint('🔧 Google Sign-In re-warmed');
+      } catch (e) {
+        debugPrint('⚠️ Error en Google Sign-In re-warm: $e');
+      }
 
-      debugPrint('✅ Recuperación de error PigeonUserDetails completada');
+      // 7. Test de estabilidad final
+      try {
+        await _firebaseAuth
+            .fetchSignInMethodsForEmail('finaltest@recovery.com')
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {
+        // Ignorar error esperado
+      }
+
+      // 8. Espera final de estabilización
+      await Future.delayed(const Duration(milliseconds: 2000));
+
+      debugPrint(
+          '✅ Recuperación MEJORADA de error PigeonUserDetails completada');
     } catch (e) {
-      debugPrint('⚠️ Error en recuperación PigeonUserDetails: $e');
+      debugPrint('⚠️ Error en recuperación MEJORADA PigeonUserDetails: $e');
+
+      // Fallback: espera extra larga
+      await Future.delayed(const Duration(seconds: 5));
     }
   }
 

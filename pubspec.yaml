@@ -12,7 +12,7 @@ dependencies:
   flutter_localizations: 
     sdk: flutter
 
-  # Para animaciones avanzadas 
+  # Para animaciones avanzadas
   animations: ^2.0.8
   
   # Para efectos visuales adicionales
@@ -23,15 +23,15 @@ dependencies:
   equatable: ^2.0.5
   provider: ^6.1.1
 
-  # 🔧 FIREBASE - VERSIONES CORREGIDAS PARA ELIMINAR PIGEONUSERDETAILS
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.16.0        # 🔧 ACTUALIZADA: Versión más estable
-  cloud_firestore: ^4.13.6 
-  firebase_analytics: ^10.7.4
-  firebase_crashlytics: ^3.4.9
+  # 🔧 FIREBASE - VERSIONES MIXTAS ESTABLES
+  firebase_core: ^2.24.2        # Versión estable reciente
+  firebase_auth: ^4.14.1        # Versión estable SIN PigeonUserDetails
+  cloud_firestore: ^4.13.6      # Compatible con el código actual
+  firebase_analytics: ^10.7.4   # Compatible
+  firebase_crashlytics: ^3.4.9  # Compatible
   
-  # 🔧 GOOGLE SIGN-IN - Versión compatible
-  google_sign_in: ^6.2.1       # 🔧 ACTUALIZADA: Mejor compatibilidad
+  # 🔧 GOOGLE SIGN-IN - Versión específica estable
+  google_sign_in: ^6.1.6        # Versión que funciona con auth 4.14.1
 
   # UI y visualización
   fl_chart: ^0.66.0
@@ -67,12 +67,11 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   build_runner: ^2.4.7
 
-# 🔧 DEPENDENCY OVERRIDES MEJORADOS - Para evitar conflictos
+# 🔧 DEPENDENCY OVERRIDES - Forzar versiones específicas que funcionan juntas
 dependency_overrides:
+  firebase_auth: ^4.14.1        # Versión sin PigeonUserDetails confirmada
+  google_sign_in: ^6.1.6        # Compatible con firebase_auth 4.14.1
   intl: ^0.19.0
-  # 🔧 NUEVO: Forzar versiones específicas que funcionan juntas
-  firebase_auth: ^4.16.0
-  google_sign_in: ^6.2.1
 
 flutter:
   uses-material-design: true
